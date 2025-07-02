@@ -20,6 +20,47 @@ In many organizations, data platform teams need to support numerous similar DAGs
 - **Reduce errors** - Validate configurations before deployment
 - **Empower non-engineers** - YAML configs are easier than Python code
 
+## How is this different from DAG Factory?
+
+Blueprint and [DAG Factory](https://github.com/astronomer/dag-factory) solve different problems:
+
+**DAG Factory** is a YAML interface to Airflow that can express the full power of Airflow:
+```yaml
+# dag-factory approach - exposes all Airflow complexity
+my_dag:
+  default_args:
+    owner: 'data-team'
+    retries: 2
+    retry_delay_seconds: 300
+  start_date: 2024-01-01
+  schedule_interval: '@daily'
+  tasks:
+    extract_data:
+      operator: airflow.operators.python.PythonOperator
+      python_callable_name: extract_from_api
+      python_callable_file: /opt/airflow/dags/etl/extract.py
+    transform_data:
+      operator: airflow.operators.python.PythonOperator
+      dependencies: [extract_data]
+      # ... many more Airflow-specific configurations
+```
+
+**Blueprint** is a focused abstraction that hides Airflow complexity:
+```yaml
+# blueprint approach - only business logic exposed
+blueprint: daily_etl
+job_id: customer-sync
+source_table: raw.customers
+target_table: analytics.dim_customers
+schedule: "@hourly"
+```
+
+**When to use each:**
+- **Use DAG Factory** when you need full Airflow flexibility and your users understand Airflow concepts
+- **Use Blueprint** when you want to hide Airflow complexity and provide domain-specific abstractions
+
+Blueprint is ideal for data platform teams who want to create standardized patterns while empowering analysts and other team members who shouldn't need to understand Airflow internals.
+
 ## Quick Example
 
 **1. Define a blueprint** (`.astro/templates/etl_blueprints.py`):
@@ -261,7 +302,7 @@ Blueprint provides clear, actionable error messages:
 
 ```bash
 $ blueprint lint
- marketing_etl.dag.yaml
+✗ marketing_etl.dag.yaml
   Line 3: Missing required parameter 'source_table' for blueprint 'daily_etl'
 
   Your configuration:
