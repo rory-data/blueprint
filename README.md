@@ -30,7 +30,7 @@ from airflow import DAG
 from typing import TypedDict
 
 class DailyETLConfig(TypedDict):
-    dag_id: str  # Auto-provided by Blueprint
+    dag_id: str
     job_id: str
     source_table: str
     target_table: str
