@@ -34,7 +34,6 @@ except ImportError:
     from typing_extensions import Annotated
 
 class DailyETLConfig(TypedDict):
-    dag_id: str  # Auto-provided by Blueprint
     job_id: Annotated[str, "Unique identifier for this job"]
     source_table: Annotated[str, "Table to read data from"]
     target_table: Annotated[str, "Table to write processed data to"]
@@ -151,7 +150,6 @@ class NotificationConfig(TypedDict, total=False):
     slack: Annotated[Optional[str], "Slack channel for alerts (e.g., #data-alerts)"]
 
 class MultiSourceConfig(TypedDict):
-    dag_id: str
     sources: Annotated[List[SourceConfig], "List of data sources to process"]
     notifications: Annotated[NotificationConfig, "Notification settings for job status"]
 
@@ -186,7 +184,6 @@ Use standard Python inheritance to share common parameters:
 
 ```python
 class BaseETLConfig(TypedDict):
-    dag_id: str
     owner: Annotated[str, "Team or person responsible for the DAG"]
     retries: Annotated[int, "Number of retry attempts on task failure"]
     email_on_failure: Annotated[str, "Email address for failure notifications"]
