@@ -22,7 +22,7 @@ In most data teams, the same kind of DAG is built over and over with small varia
 - **Build guardrails** – Enforce your standards and best practices
 - **Help non-engineers** – Let others safely define DAGs without touching Python
 
-## 🛠️ Example Workflow
+## Example Workflow
 
 ### 1. Create a Blueprint template
 
@@ -94,7 +94,7 @@ retries: 4
 
 ```bash
 $ blueprint lint
- customer_etl.dag.yaml - Valid
+  customer_etl.dag.yaml - Valid
 ```
 
 🎉 **Done!** Blueprint builds your DAG with ID `customer_etl`.
@@ -339,7 +339,8 @@ schedule: "@hourly"
 ```
 
 **Use DAG Factory if:** You need full Airflow flexibility and your users understand Airflow concepts
-**Use Blueprint if: ** You want standardized, low-code patterns for non-Airflow users
+
+**Use Blueprint if:** You want standardized, low-code patterns for non-Airflow users
 
 ## Contributing
 
