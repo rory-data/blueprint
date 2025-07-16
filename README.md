@@ -120,7 +120,53 @@ dag = DailyETL.build(
 - **Dynamic DAG generation** - Create multiple DAGs programmatically
 - **Testing support** - Easy unit testing of your DAG configurations
 
-### Python Example with Validation
+### Dynamic DAG Generation
+
+The Python API shines when you need to create DAGs dynamically based on external configuration:
+
+```python
+from etl_blueprints import DailyETL
+import json
+
+# Load table configurations from external source
+with open('etl_config.json') as f:
+    table_configs = json.load(f)
+
+# Generate a DAG for each table with custom logic
+for config in table_configs:
+    schedule = "@hourly" if config["priority"] == "high" else "@daily"
+    retries = 5 if config["is_critical"] else 2
+    
+    dag = DailyETL.build(
+        job_id=f"{config['name']}-etl",
+        source_table=config["source"],
+        target_table=config["target"],
+        schedule=schedule,
+        retries=retries
+    )
+```
+
+### Creating Conditional DAGs
+
+```python
+from etl_blueprints import DailyETL
+import os
+
+# Only create production DAGs in production environment
+if os.getenv("AIRFLOW_ENV") == "production":
+    critical_tables = ["users", "transactions", "orders"]
+    
+    for table in critical_tables:
+        dag = DailyETL.build(
+            job_id=f"prod-{table}-sync",
+            source_table=f"raw.{table}",
+            target_table=f"warehouse.{table}",
+            schedule="@hourly",
+            retries=5
+        )
+```
+
+### Python Example
 
 ```python
 from blueprint import Blueprint, BaseModel, Field, field_validator
@@ -157,25 +203,6 @@ class DailyETL(Blueprint[DailyETLConfig]):
         return dag
 ```
 
-### Dynamic DAG Generation
-
-Create multiple DAGs programmatically:
-
-```python
-from etl_blueprints import DailyETL
-
-# Generate DAGs for multiple tables
-tables = ["users", "orders", "products"]
-
-for table in tables:
-    dag = DailyETL.build(
-        job_id=f"{table}-sync",
-        source_table=f"raw.{table}",
-        target_table=f"analytics.dim_{table}",
-        schedule="@daily"
-    )
-    # DAG is automatically registered with Airflow
-```
 
 ### Loading from YAML in Python
 
@@ -222,31 +249,52 @@ def test_daily_etl_config():
 
 ## Type Safety and Validation
 
-Blueprint uses Pydantic models for full type safety, validation, and self-documenting parameters:
+Blueprint uses Pydantic under the hood for robust validation with helpful error messages. This gives you:
 
-```python
-from blueprint import BaseModel, Field
-from typing import Optional
+- **Type coercion** - Automatically converts compatible types (e.g., string "5" to integer 5)
+- **Field validation** - Set constraints like min/max values, regex patterns, etc.
+- **Custom validators** - Add your own validation logic for complex rules
+- **Clear error messages** - Know exactly what went wrong and how to fix it
 
-class MyConfig(BaseModel):
-    dag_id: str = Field(description="Unique DAG identifier")
-    param1: str = Field(description="Main parameter for the job")
-    param2: int = Field(default=10, description="Secondary parameter with default")
-    optional_param: Optional[str] = Field(default=None, description="Optional parameter")
+When validation fails, you get clear feedback:
 
-class MyBlueprint(Blueprint[MyConfig]):
-    """My blueprint that does something useful."""
-    
-    def render(self, config: MyConfig) -> DAG:
-        # Full IDE autocomplete and type checking
-        # Config is already validated by Pydantic
-        ...
+```bash
+$ blueprint lint
+✗ customer_etl.dag.yaml
+  ValidationError: 3 validation errors for DailyETLConfig
+  
+  job_id
+    String does not match pattern '^[a-zA-Z0-9_-]+$' (type=value_error.str.regex)
+    Given: "customer sync!" (contains spaces)
+  
+  retries
+    ensure this value is less than or equal to 5 (type=value_error.number.not_le)
+    Given: 10
+  
+  schedule
+    Invalid schedule format (type=value_error)
+    Given: "every hour" (use "@hourly" or valid cron expression)
 ```
 
-These descriptions appear in:
-- CLI help: `blueprint describe my_blueprint`
-- Interactive prompts: `blueprint new`
-- Generated config files as comments
+### Field Validation Examples
+
+```python
+from blueprint import BaseModel, Field, field_validator
+
+class ETLConfig(BaseModel):
+    # Basic constraints
+    job_id: str = Field(pattern=r'^[a-zA-Z0-9_-]+$')
+    retries: int = Field(ge=0, le=5)
+    timeout_minutes: int = Field(gt=0, le=1440)  # 1-1440 minutes
+    
+    # Custom validation
+    @field_validator('schedule')
+    def validate_schedule(cls, v):
+        valid_presets = ['@once', '@hourly', '@daily', '@weekly', '@monthly']
+        if v not in valid_presets and not cls._is_valid_cron(v):
+            raise ValueError(f'Must be a preset ({", ".join(valid_presets)}) or valid cron')
+        return v
+```
 
 ## More Examples
 
