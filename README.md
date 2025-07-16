@@ -34,20 +34,15 @@ _Existing templates will be visible and usable by team members through the Astro
 Save this in `.astro/templates/etl_blueprints.py`:
 
 ```python
-from blueprint import Blueprint
+from blueprint import Blueprint, BaseModel, Field
 from airflow import DAG
-from typing import TypedDict
-try:
-    from typing import Annotated
-except ImportError:
-    from typing_extensions import Annotated
 
-class DailyETLConfig(TypedDict):
-    job_id: Annotated[str, "Unique identifier for this job"]
-    source_table: Annotated[str, "Table to read data from"]
-    target_table: Annotated[str, "Table to write processed data to"]
-    schedule: Annotated[str, "Cron expression or Airflow preset (@daily, @hourly, etc.)"]
-    retries: Annotated[int, "Number of retry attempts on task failure"]
+class DailyETLConfig(BaseModel):
+    job_id: str = Field(description="Unique identifier for this job")
+    source_table: str = Field(description="Table to read data from")
+    target_table: str = Field(description="Table to write processed data to")
+    schedule: str = Field(default="@daily", description="Cron expression or Airflow preset")
+    retries: int = Field(default=2, description="Number of retry attempts on task failure")
 
 class DailyETL(Blueprint[DailyETLConfig]):
     """Daily ETL job that moves data between tables with configurable scheduling."""
@@ -55,28 +50,22 @@ class DailyETL(Blueprint[DailyETLConfig]):
     # Name is auto-generated as "daily_etl" from class name
     # Or specify explicitly:
     # name = "daily_etl_job"
-    
-    # Default values defined as class attributes
-    defaults = {
-        "schedule": "@daily",
-        "retries": 2
-    }
 
     def render(self, config: DailyETLConfig) -> DAG:
         from airflow.operators.python import PythonOperator
         from datetime import datetime
 
         with DAG(
-            dag_id=config["dag_id"],
-            schedule=config["schedule"],
+            dag_id=config.job_id,
+            schedule=config.schedule,
             start_date=datetime(2024, 1, 1),
             catchup=False,
-            default_args={"retries": config["retries"]}
+            default_args={"retries": config.retries}
         ) as dag:
             PythonOperator(
                 task_id="extract_transform_load",
                 python_callable=lambda: print(
-                    f"Moving data from {config['source_table']} to {config['target_table']}"
+                    f"Moving data from {config.source_table} to {config.target_table}"
                 )
             )
         return dag
@@ -134,8 +123,7 @@ dag = DailyETL.build(
 ### Python Example with Validation
 
 ```python
-from blueprint import Blueprint
-from pydantic import BaseModel, Field, field_validator
+from blueprint import Blueprint, BaseModel, Field, field_validator
 from airflow import DAG
 from datetime import datetime
 
@@ -156,13 +144,13 @@ class DailyETLConfig(BaseModel):
 class DailyETL(Blueprint[DailyETLConfig]):
     """Daily ETL job that moves data between tables."""
     
-    def render(self, config: dict) -> DAG:
+    def render(self, config: DailyETLConfig) -> DAG:
         with DAG(
-            dag_id=config["job_id"],
-            schedule=config["schedule"],
+            dag_id=config.job_id,
+            schedule=config.schedule,
             start_date=datetime(2024, 1, 1),
             catchup=False,
-            default_args={"retries": config["retries"]}
+            default_args={"retries": config.retries}
         ) as dag:
             # Define your tasks here
             pass
@@ -237,7 +225,7 @@ def test_daily_etl_config():
 Blueprint uses Pydantic models for full type safety, validation, and self-documenting parameters:
 
 ```python
-from pydantic import BaseModel, Field
+from blueprint import BaseModel, Field
 from typing import Optional
 
 class MyConfig(BaseModel):
@@ -249,7 +237,7 @@ class MyConfig(BaseModel):
 class MyBlueprint(Blueprint[MyConfig]):
     """My blueprint that does something useful."""
     
-    def render(self, config: dict) -> DAG:
+    def render(self, config: MyConfig) -> DAG:
         # Full IDE autocomplete and type checking
         # Config is already validated by Pydantic
         ...
@@ -267,7 +255,7 @@ These descriptions appear in:
 Blueprints support nested objects and lists:
 
 ```python
-from pydantic import BaseModel, Field
+from blueprint import BaseModel, Field
 from typing import Optional, List
 
 class SourceConfig(BaseModel):
@@ -285,10 +273,10 @@ class MultiSourceConfig(BaseModel):
 class MultiSourceETL(Blueprint[MultiSourceConfig]):
     """ETL pipeline that processes multiple data sources in parallel."""
 
-    def render(self, config: dict) -> DAG:
+    def render(self, config: MultiSourceConfig) -> DAG:
         # Access nested data with type safety
-        for source in config["sources"]:
-            print(f"Processing {source['table']} from {source['database']}")
+        for source in config.sources:
+            print(f"Processing {source.table} from {source.database}")
 ```
 
 ```yaml
@@ -320,17 +308,17 @@ class S3ImportConfig(BaseETLConfig):
 class BaseETL(Blueprint[BaseETLConfig]):
     """Base blueprint with common ETL parameters."""
     
-    def get_default_args(self, config: dict):
+    def get_default_args(self, config: BaseETLConfig):
         return {
-            "owner": config["owner"],
-            "retries": config["retries"],
-            "email_on_failure": [config["email_on_failure"]]
+            "owner": config.owner,
+            "retries": config.retries,
+            "email_on_failure": [config.email_on_failure]
         }
 
 class S3Import(Blueprint[S3ImportConfig]):
     """Import data from S3."""
     
-    def render(self, config: dict) -> DAG:
+    def render(self, config: S3ImportConfig) -> DAG:
         # Has access to all BaseETLConfig fields plus S3-specific ones
         default_args = self.get_default_args(config)
         # ... create DAG with S3 operators
