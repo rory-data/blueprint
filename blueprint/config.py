@@ -56,6 +56,6 @@ def get_output_dir(cli_value: Optional[str] = None) -> str:
 
     # Default using Airflow's dags folder
     # Import here to avoid circular imports
-    from blueprint.template_loader import get_airflow_dags_folder
+    from blueprint.template_loader import get_airflow_dags_folder  # noqa: PLC0415
 
     return str(get_airflow_dags_folder() / "configs")

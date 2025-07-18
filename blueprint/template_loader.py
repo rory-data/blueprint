@@ -23,7 +23,7 @@ def get_airflow_dags_folder() -> Path:
         Path to the configured dags folder, falling back to AIRFLOW_HOME/dags
     """
     try:
-        from airflow.configuration import conf
+        from airflow.configuration import conf  # noqa: PLC0415
 
         dags_folder = conf.get("core", "dags_folder")
         return Path(dags_folder)
@@ -36,7 +36,7 @@ def get_airflow_dags_folder() -> Path:
 def get_template_path() -> str:
     """Get the template path from environment or default."""
     # Use the config module which handles precedence
-    from blueprint.config import get_template_path as config_get_template_path
+    from blueprint.config import get_template_path as config_get_template_path  # noqa: PLC0415
 
     return config_get_template_path()
 
@@ -95,16 +95,16 @@ def discover_yaml_dags(
     Returns:
         Dictionary mapping DAG names to DAG objects
     """
-    import logging
+    import logging  # noqa: PLC0415
 
-    from blueprint.errors import BlueprintError
+    from blueprint.errors import BlueprintError  # noqa: PLC0415
 
     logger = logging.getLogger(__name__)
 
     # Determine configs directory
     if configs_dir is None:
         # Use config module to get output_dir
-        from blueprint.config import get_output_dir
+        from blueprint.config import get_output_dir  # noqa: PLC0415
 
         configs_dir_path = Path(get_output_dir())
     else:
