@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from blueprint.config import get_output_dir
 from blueprint.errors import BlueprintError
 from blueprint.loaders import from_yaml
 from blueprint.utils import get_template_path as utils_get_template_path
@@ -82,13 +83,7 @@ def discover_yaml_dags(
     logger = logging.getLogger(__name__)
 
     # Determine configs directory
-    if configs_dir is None:
-        # Use config module to get output_dir
-        from blueprint.config import get_output_dir
-
-        configs_dir_path = Path(get_output_dir())
-    else:
-        configs_dir_path = Path(configs_dir)
+    configs_dir_path = Path(get_output_dir() if configs_dir is None else configs_dir)
 
     # Determine template directory (use registry now)
     template_dir = get_template_path() if template_dir is None else str(template_dir)
