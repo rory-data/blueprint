@@ -1,5 +1,5 @@
 [project]
-name = "astronomer-blueprint"
+name = "airflow-blueprint"
 dynamic = ["version"]
 description = "Create reusable Airflow DAG templates with validated configurations"
 readme = "README.md"

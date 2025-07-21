@@ -25,11 +25,11 @@ class SimpleETLConfig(TypedDict):
 
 class SimpleETL(Blueprint[SimpleETLConfig]):
     # Name auto-generated as "simple_etl" from class name
-    
+
     def render(self, config: SimpleETLConfig) -> DAG:
         from airflow.operators.python import PythonOperator
         from datetime import datetime
-        
+
         with DAG(
             dag_id=config["dag_id"],
             start_date=datetime(2024, 1, 1),
@@ -50,7 +50,7 @@ The easiest way is to use the interactive scaffolding:
 ```bash
 $ blueprint new
 ? What should we name your DAG? my_first_etl
-? Which blueprint would you like to use? 
+? Which blueprint would you like to use?
   ❯ simple_etl - Simple ETL pipeline
     daily_etl - Daily batch ETL job
     streaming_pipeline - Real-time data pipeline
@@ -169,7 +169,7 @@ class BaseScheduledJob(Blueprint[BaseScheduledJobConfig]):
         "email_on_failure": "data-alerts@company.com",
         "owner": "data-team"
     }
-    
+
     def get_default_args(self, config: BaseScheduledJobConfig):
         return {
             "owner": config["owner"],
@@ -183,11 +183,11 @@ class DatabaseExport(Blueprint[DatabaseExportConfig]):
         **BaseScheduledJob.defaults,
         "output_format": "parquet"
     }
-    
+
     def render(self, config: DatabaseExportConfig) -> DAG:
         from airflow import DAG
         from airflow.providers.postgres.operators.postgres import PostgresOperator
-        
+
         with DAG(
             dag_id=config["dag_id"],
             schedule=config["schedule"],
@@ -232,10 +232,10 @@ When you encounter an error:
 $ blueprint lint
 ✗ broken_config.dag.yaml
   Line 5: Type error for parameter 'retries'
-  
+
   Expected: int
   Got: str ("two")
-  
+
   Your configuration:
     4 | schedule: "@hourly"
     5 | retries: "two"
@@ -276,11 +276,11 @@ $ blueprint new
 ? What should we name your DAG? customer_sync
 ? Which blueprint would you like to use?
   ❯ daily_etl - Daily batch ETL job
-    hourly_sync - Hourly data synchronization  
+    hourly_sync - Hourly data synchronization
     ml_training - Machine learning training pipeline
 ? Enter job_id (Unique identifier for this job): customer-daily-sync
 ? Enter source_table (Table to read from): raw.customers
-? Enter target_table (Table to write to): analytics.dim_customers  
+? Enter target_table (Table to write to): analytics.dim_customers
 ? Enter schedule (default: @daily): @hourly
 ? Enter retries (default: 2): 3
 
@@ -294,12 +294,12 @@ The generated file includes all parameters with comments:
 blueprint: daily_etl
 # Unique identifier for this job
 job_id: customer-daily-sync
-# Table to read from  
+# Table to read from
 source_table: raw.customers
 # Table to write to
 target_table: analytics.dim_customers
 # Schedule interval
-schedule: "@hourly" 
+schedule: "@hourly"
 # Number of retries
 retries: 3
 ```
@@ -355,18 +355,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      
+
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.10'
-      
+
       - name: Install Blueprint
-        run: pip install astronomer-blueprint
-      
+        run: pip install airflow-blueprint
+
       - name: Validate configurations
         run: blueprint lint --exit-code
-      
+
       - name: List available blueprints
         run: blueprint list
 ```
@@ -469,12 +469,12 @@ import yaml
 def migrate_etl_config(old_config_path):
     with open(old_config_path) as f:
         config = yaml.safe_load(f)
-    
+
     if config.get('blueprint') == 'etl_job':
         # Convert single source to list
         config['blueprint'] = 'etl_job_v2'
         config['sources'] = [{'location': config.pop('source')}]
-    
+
     return config
 ```
 
@@ -527,7 +527,7 @@ def render(self, config):
     # Validate business logic
     if config["schedule"] == "@hourly" and config["retries"] > 3:
         raise ValueError("Hourly jobs shouldn't retry more than 3 times")
-    
+
     # Validate dependencies exist
     if config.get("upstream_dag"):
         # Check that upstream DAG exists in Airflow
@@ -546,7 +546,7 @@ $ blueprint lint
 Available blueprints:
   - daily_etl
   - streaming_pipeline
-  
+
 Check: Is your blueprint file in .astro/templates/?
 Check: Does your class inherit from Blueprint[ConfigType]?
 ```
@@ -569,7 +569,7 @@ $ blueprint list
 ⚠ Warning: Multiple blueprints named 'etl_job' found:
   - .astro/templates/etl.py:15
   - .astro/templates/legacy/old_etl.py:8
-  
+
 The most recently loaded blueprint will be used.
 ```
 

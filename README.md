@@ -375,7 +375,7 @@ class S3Import(Blueprint[S3ImportConfig]):
 ## Installation
 
 ```bash
-pip install astronomer-blueprint
+pip install airflow-blueprint
 ```
 
 ## Configuration
