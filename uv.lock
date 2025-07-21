@@ -915,7 +915,6 @@ wheels = [
 
 [[package]]
 name = "astronomer-blueprint"
-version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "apache-airflow", version = "2.10.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.8.1'" },

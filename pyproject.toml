@@ -1,6 +1,6 @@
 [project]
 name = "astronomer-blueprint"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Create reusable Airflow DAG templates with validated configurations"
 readme = "README.md"
 license = {text = "MIT"}
@@ -50,6 +50,9 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["blueprint"]
+
+[tool.hatch.version]
+path = "blueprint/__init__.py"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
