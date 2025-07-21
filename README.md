@@ -1,6 +1,6 @@
 # Blueprint
 
-**⚠️ NOTE: This is currently an idea/concept and not yet implemented. The following describes the proposed functionality.**
+**⚠️ NOTE: This is currently an alpha project and may change significantly.**
 
 Build reusable, validated Airflow DAG templates that anyone on your team can discover and use.
 
@@ -13,7 +13,7 @@ With Blueprint, you can:
 - ✅ Enforce **type-safe parameters** with validation
 - 🚫 Get **clear error messages** when configs are invalid
 - 🛠️ Use a **CLI** to validate configs before deployment
-- 🔍 Automatically **discover available templates** and **generate new DAGs** from them, including directly within Astro IDE
+- 🔍 Automatically **discover available templates** and **generate new DAGs** from them
 
 ## Why Blueprint?
 
@@ -23,9 +23,6 @@ In most data teams, the same kind of DAG is built over and over with small varia
 - **Reduce errors** – Validate configurations before deployment
 - **Build guardrails** – Enforce your standards and best practices
 - **Help non-engineers** – Let others safely define DAGs without touching Python
-
-_Existing templates will be visible and usable by team members through the Astro IDE_
-![Modal](https://github.com/user-attachments/assets/1cd09676-7431-4803-8344-81887576fe31)
 
 ## Example Workflow
 
@@ -83,9 +80,6 @@ target_table: analytics.dim_customers
 schedule: "@hourly"
 retries: 4
 ```
-
-_Blueprint YAML configurations can be created and validated directly in Astro IDE._
-![Template](https://github.com/user-attachments/assets/1f0f6aa7-3d9a-49eb-aaec-77b4ecc9c602)
 
 ### 3. Validate your config
 
@@ -202,7 +196,6 @@ class DailyETL(Blueprint[DailyETLConfig]):
             pass
         return dag
 ```
-
 
 ### Loading from YAML in Python
 
