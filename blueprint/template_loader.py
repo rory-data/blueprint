@@ -4,41 +4,25 @@ This module handles the configuration and loading of Blueprint templates
 from a configurable path, defaulting to $AIRFLOW_HOME/.astro/templates.
 """
 
-import os
+import logging
 import sys
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-# Import here to avoid circular imports
-from blueprint import from_yaml
+from blueprint.errors import BlueprintError
+from blueprint.loaders import from_yaml
+from blueprint.utils import get_template_path as utils_get_template_path
 
 # Default template path relative to AIRFLOW_HOME
 DEFAULT_TEMPLATE_PATH = ".astro/templates"
 
 
-def get_airflow_dags_folder() -> Path:
-    """Get the dags folder from Airflow configuration.
-
-    Returns:
-        Path to the configured dags folder, falling back to AIRFLOW_HOME/dags
-    """
-    try:
-        from airflow.configuration import conf
-
-        dags_folder = conf.get("core", "dags_folder")
-        return Path(dags_folder)
-    except (ImportError, Exception):
-        # Fallback if Airflow is not installed or config can't be read
-        airflow_home = os.getenv("AIRFLOW_HOME", str(Path("~/airflow").expanduser()))
-        return Path(airflow_home) / "dags"
+# Moved to utils.py to avoid circular import
 
 
 def get_template_path() -> str:
     """Get the template path from environment or default."""
-    # Use the config module which handles precedence
-    from blueprint.config import get_template_path as config_get_template_path
-
-    return config_get_template_path()
+    return utils_get_template_path()
 
 
 def setup_template_path() -> None:
@@ -95,10 +79,6 @@ def discover_yaml_dags(
     Returns:
         Dictionary mapping DAG names to DAG objects
     """
-    import logging
-
-    from blueprint.errors import BlueprintError
-
     logger = logging.getLogger(__name__)
 
     # Determine configs directory

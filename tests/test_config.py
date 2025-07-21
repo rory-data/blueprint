@@ -164,7 +164,7 @@ class TestOutputDir:
             path = get_output_dir()
             assert path == "/config/output"
 
-    @mock.patch("blueprint.template_loader.get_airflow_dags_folder")
+    @mock.patch("blueprint.utils.get_airflow_dags_folder")
     def test_default_value(self, mock_get_dags_folder, tmp_path, chdir):
         """Test default value uses Airflow dags folder."""
         mock_dags_folder = Path("/airflow/dags")
@@ -243,7 +243,7 @@ output_dir = "/config/output"
         config_file.write_text('template_path = "/only/templates"')
 
         with chdir(tmp_path), mock.patch(
-            "blueprint.template_loader.get_airflow_dags_folder"
+            "blueprint.utils.get_airflow_dags_folder"
         ) as mock_get_dags_folder, mock.patch.dict(os.environ, {}, clear=True):
             mock_get_dags_folder.return_value = Path("/airflow/dags")
 

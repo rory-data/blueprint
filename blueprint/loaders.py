@@ -5,7 +5,7 @@ from typing import Any, Dict, List, Optional
 
 import yaml
 
-from blueprint import Blueprint
+from blueprint.core import Blueprint
 from blueprint.errors import ConfigurationError, YAMLParseError
 from blueprint.registry import BlueprintRegistry, registry
 

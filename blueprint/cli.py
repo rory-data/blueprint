@@ -19,7 +19,7 @@ from blueprint import (
     load_blueprint,
 )
 from blueprint.config import get_output_dir, get_template_path
-from blueprint.template_loader import get_airflow_dags_folder
+from blueprint.utils import get_airflow_dags_folder
 
 console = Console()
 
