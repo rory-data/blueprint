@@ -10,12 +10,20 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from blueprint.config import get_output_dir
-from blueprint.errors import BlueprintError
+from blueprint.errors import BlueprintError, DuplicateDAGIdError
 from blueprint.loaders import from_yaml
 from blueprint.utils import get_template_path as utils_get_template_path
 
 # Default template path relative to AIRFLOW_HOME
 DEFAULT_TEMPLATE_PATH = ".astro/templates"
+
+# Create logger for this module
+logger = logging.getLogger(__name__)
+
+
+def _raise_duplicate_error(dag_id: str, conflicting_configs: list) -> None:
+    """Raise a DuplicateDAGIdError for the given DAG ID and configs."""
+    raise DuplicateDAGIdError(dag_id, conflicting_configs)
 
 
 # Moved to utils.py to avoid circular import
@@ -80,8 +88,6 @@ def discover_yaml_dags(
     Returns:
         Dictionary mapping DAG names to DAG objects
     """
-    logger = logging.getLogger(__name__)
-
     # Determine configs directory
     configs_dir_path = Path(get_output_dir() if configs_dir is None else configs_dir)
 
@@ -90,6 +96,7 @@ def discover_yaml_dags(
 
     dags = {}
     failed_configs = []
+    dag_id_to_configs = {}  # Track DAG IDs to config files for duplicate detection
 
     logger.info("Discovering DAG configurations in %s (pattern: %s)", configs_dir_path, pattern)
 
@@ -111,12 +118,25 @@ def discover_yaml_dags(
             # Load the DAG from YAML (now uses registry automatically)
             dag = from_yaml(str(yaml_file), template_dir=template_dir)
 
+            # Check for duplicate DAG IDs
+            dag_id = dag.dag_id
+            if dag_id in dag_id_to_configs:
+                # Duplicate found - collect all files with this DAG ID
+                conflicting_configs = dag_id_to_configs[dag_id] + [yaml_file]
+                _raise_duplicate_error(dag_id, conflicting_configs)
+
+            # Track this DAG ID
+            dag_id_to_configs[dag_id] = [yaml_file]
+
             # Use the filename (without extension) as the key
             dag_name = yaml_file.stem.replace(".dag", "")
             dags[dag_name] = dag
 
             logger.info("✅ Loaded DAG from %s: %s", yaml_file.name, dag.dag_id)
 
+        except DuplicateDAGIdError:
+            # Re-raise duplicate DAG ID errors immediately - they should stop processing
+            raise
         except BlueprintError as e:
             # Our rich errors - log the formatted message
             failed_configs.append((yaml_file, e))
