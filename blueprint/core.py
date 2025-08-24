@@ -1,7 +1,8 @@
 """Core Blueprint base class with magic method generation."""
 
 import inspect
-from typing import TYPE_CHECKING, Any, Dict, Generic, Type, TypeVar
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Dict, Generic, Optional, Type, TypeVar
 
 from pydantic import BaseModel
 
@@ -137,3 +138,132 @@ class Blueprint(Generic[T]):
     def get_schema(cls) -> Dict[str, Any]:
         """Get the JSON Schema for this Blueprint's configuration."""
         return cls.get_config_type().model_json_schema()
+
+    def write_dag_file(self, config: T, dag_id: str, output_file: Optional[str] = None) -> str:
+        """Write the rendered DAG code to a .py file in the dags folder.
+
+        Args:
+            config: The validated configuration model instance
+            dag_id: The DAG ID to use in the generated file
+            output_file: Optional output file path. If not provided, uses dag_id.py in dags folder
+
+        Returns:
+            Path to the created file
+
+        Example:
+            ```python
+            class MyConfig(BaseModel):
+                job_id: str
+                schedule: str = "@daily"
+
+            blueprint = MyBlueprint()
+            config = MyConfig(job_id="my_job", schedule="@hourly")
+            file_path = blueprint.write_dag_file(config, "my_job")
+            print(f"DAG file written to: {file_path}")
+            ```
+        """
+        from .utils import get_airflow_dags_folder
+
+        # Determine output file path
+        if output_file is None:
+            dags_folder = get_airflow_dags_folder()
+            output_file = str(dags_folder / f"{dag_id}.py")
+        
+        # Get the template name and class name for this blueprint
+        template_name = self._get_template_name()
+        class_name = self.__class__.__name__
+        
+        # Generate the Python code
+        dag_code = self._generate_dag_code(config, template_name, class_name)
+        
+        # Write the file
+        output_path = Path(output_file)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(dag_code)
+        
+        return str(output_path)
+
+    @classmethod
+    def write_dag_file_from_config(
+        cls, dag_id: str, output_file: Optional[str] = None, **kwargs: Any
+    ) -> str:
+        """Class method to write DAG file directly from configuration parameters.
+
+        Args:
+            dag_id: The DAG ID to use in the generated file
+            output_file: Optional output file path. If not provided, uses dag_id.py in dags folder
+            **kwargs: Configuration parameters for the blueprint
+
+        Returns:
+            Path to the created file
+
+        Example:
+            ```python
+            file_path = MyBlueprint.write_dag_file_from_config(
+                dag_id="my_job",
+                job_id="my_job",
+                schedule="@hourly",
+                retries=3
+            )
+            print(f"DAG file written to: {file_path}")
+            ```
+        """
+        # Create the config instance - Pydantic handles validation
+        config = cls._config_type(**kwargs)
+        
+        # Create blueprint instance and call instance method
+        instance = cls()
+        return instance.write_dag_file(config, dag_id, output_file)
+
+    def _get_template_name(self) -> str:
+        """Get the template name for this blueprint.
+        
+        By convention, convert CamelCase class name to snake_case template name.
+        E.g., DailyETL -> daily_etl, MultiSourceETL -> multi_source_etl
+        """
+        class_name = self.__class__.__name__
+        
+        # Convert CamelCase to snake_case
+        # Handle special cases like ETL -> etl
+        template_name = ""
+        for i, char in enumerate(class_name):
+            if char.isupper() and i > 0:
+                # Don't add underscore if previous char was also uppercase (handle acronyms)
+                if i > 0 and class_name[i-1].islower():
+                    template_name += "_"
+            template_name += char.lower()
+        
+        return template_name
+
+    def _generate_dag_code(self, config: T, template_name: str, class_name: str) -> str:
+        """Generate the Python code for the DAG file."""
+        # Format the configuration parameters
+        config_params = []
+        config_dict = config.model_dump()
+        
+        for key, value in config_dict.items():
+            if isinstance(value, str):
+                config_params.append(f'    {key}="{value}",')
+            elif isinstance(value, list):
+                # Format list values
+                formatted_list = "[" + ", ".join(f'"{item}"' if isinstance(item, str) else str(item) for item in value) + "]"
+                config_params.append(f'    {key}={formatted_list},')
+            elif isinstance(value, bool):
+                config_params.append(f'    {key}={value},')
+            else:
+                config_params.append(f'    {key}={value},')
+        
+        config_str = "\n".join(config_params)
+        
+        return f'''"""Auto-generated DAG file from Blueprint."""
+
+from blueprint import load_template
+
+# Load the blueprint template
+{class_name} = load_template("{template_name}", "{class_name}")
+
+# Create the DAG with validated configuration
+dag = {class_name}.build(
+{config_str}
+)
+'''
