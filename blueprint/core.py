@@ -1,9 +1,10 @@
 """Core Blueprint base class with magic method generation."""
 
 import inspect
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, Generic, Type, TypeVar
 
-# Handle missing pydantic gracefully
+# Handle missing dependencies gracefully
 try:
     from pydantic import BaseModel
 except ImportError:
@@ -23,6 +24,28 @@ except ImportError:
         
         def __dict__(self):
             return {k: v for k, v in self.__dict__.items() if not k.startswith('_')}
+
+try:
+    from jinja2 import Environment, FileSystemLoader, Template
+except ImportError:
+    # Fallback when Jinja2 is not available
+    class Template:
+        def __init__(self, source):
+            self.source = source
+        
+        def render(self, **kwargs):
+            return self.source
+    
+    class Environment:
+        def __init__(self, **kwargs):
+            pass
+        
+        def get_template(self, name):
+            return Template(f"# Template {name} not available without Jinja2")
+    
+    class FileSystemLoader:
+        def __init__(self, *args, **kwargs):
+            pass
 
 if TYPE_CHECKING:
     from airflow import DAG
@@ -149,7 +172,8 @@ class Blueprint(Generic[T]):
     def render(self, config: T) -> "DAG":
         """Render the DAG with validated configuration.
 
-        This method must be implemented by Blueprint subclasses.
+        This method uses Jinja2 templates when available, or must be implemented 
+        by Blueprint subclasses for custom DAG generation logic.
 
         Args:
             config: The validated configuration model instance
@@ -164,6 +188,7 @@ class Blueprint(Generic[T]):
                 schedule: str = "@daily"
 
             class MyBlueprint(Blueprint[MyConfig]):
+                # Uses Jinja2 template automatically, or implement custom logic:
                 def render(self, config: MyConfig) -> DAG:
                     return DAG(
                         dag_id=config.dag_id,
@@ -172,8 +197,34 @@ class Blueprint(Generic[T]):
                     )
             ```
         """
-        msg = f"{self.__class__.__name__} must implement the render() method"
-        raise NotImplementedError(msg)
+        # Try to use Jinja2 template first
+        try:
+            template_code = self._render_jinja_template(config)
+            return self._execute_template_code(template_code)
+        except FileNotFoundError:
+            # No template found, subclass must implement this method
+            msg = (
+                f"{self.__class__.__name__} must either provide a Jinja2 template "
+                f"or implement the render() method"
+            )
+            raise NotImplementedError(msg)
+
+    def _execute_template_code(self, template_code: str) -> "DAG":
+        """Execute the rendered template code to create a DAG object."""
+        # Create a local namespace for execution
+        local_namespace = {}
+        global_namespace = {}
+        
+        # Execute the template code
+        exec(template_code, global_namespace, local_namespace)
+        
+        # Find the DAG object in the executed code
+        dag = local_namespace.get('dag')
+        if dag is None:
+            msg = "Template code did not create a 'dag' variable"
+            raise RuntimeError(msg)
+        
+        return dag
 
     @classmethod
     def get_config_type(cls) -> Type[BaseModel]:
@@ -191,11 +242,66 @@ class Blueprint(Generic[T]):
         """Get the JSON Schema for this Blueprint's configuration."""
         return cls.get_config_type().model_json_schema()
 
+    def _get_template_path(self) -> Path:
+        """Get the path to the Jinja2 template for this blueprint."""
+        # Get the template name based on the blueprint class name
+        class_name = self.__class__.__name__
+        if class_name.endswith('Blueprint'):
+            class_name = class_name[:-9]  # Remove 'Blueprint' suffix
+        
+        # Convert CamelCase to snake_case for template naming
+        import re
+        blueprint_name = re.sub('([a-z0-9])([A-Z])', r'\1_\2', class_name).lower()
+        
+        # Look for template in multiple locations
+        possible_paths = [
+            # In the same directory as the blueprint class
+            Path(inspect.getfile(self.__class__)).parent / "j2" / f"{blueprint_name}.j2",
+            # In the blueprint package templates directory
+            Path(__file__).parent / "templates" / f"{blueprint_name}.j2",
+            # In the examples templates directory (for development)
+            Path(__file__).parent.parent / "examples" / ".astro" / "templates" / "j2" / f"{blueprint_name}.j2",
+        ]
+        
+        for path in possible_paths:
+            if path.exists():
+                return path
+        
+        # Return the first possible path for error messaging
+        return possible_paths[0]
+
+    def _load_template(self) -> Template:
+        """Load the Jinja2 template for this blueprint."""
+        template_path = self._get_template_path()
+        
+        if not template_path.exists():
+            msg = (
+                f"Template file not found: {template_path}. "
+                f"Create a Jinja2 template file for {self.__class__.__name__} "
+                f"to enable template-based DAG generation."
+            )
+            raise FileNotFoundError(msg)
+        
+        # Create Jinja2 environment with the template directory
+        env = Environment(
+            loader=FileSystemLoader(str(template_path.parent)),
+            autoescape=False,
+            trim_blocks=True,
+            lstrip_blocks=True,
+        )
+        
+        return env.get_template(template_path.name)
+
+    def _render_jinja_template(self, config: T) -> str:
+        """Render the Jinja2 template with the given configuration."""
+        template = self._load_template()
+        return template.render(config=config)
+
     def render_template(self, config: T) -> str:
         """Render the DAG as a Python code string template.
 
-        This method should be implemented by Blueprint subclasses that want to
-        support build-time DAG file generation.
+        This method uses Jinja2 templates to generate DAG code, following DRY principles
+        by using the same template structure for both runtime and build-time generation.
 
         Args:
             config: The validated configuration model instance
@@ -206,26 +312,15 @@ class Blueprint(Generic[T]):
         Example:
             ```python
             class MyBlueprint(Blueprint[MyConfig]):
-                def render(self, config: MyConfig) -> DAG:
-                    # Runtime DAG object creation
-                    return DAG(dag_id=config.dag_id, ...)
-                
-                def render_template(self, config: MyConfig) -> str:
-                    # Build-time DAG code generation
-                    return '''
-from airflow import DAG
-from datetime import datetime
-
-dag = DAG(
-    dag_id="{dag_id}",
-    schedule="{schedule}",
-    start_date=datetime(2024, 1, 1),
-)
-                    '''.format(dag_id=config.dag_id, schedule=config.schedule)
+                # No need to implement render_template - uses Jinja2 template
+                pass
             ```
         """
-        # Default implementation: generate template from render() method
-        return self._generate_template_from_render(config)
+        try:
+            return self._render_jinja_template(config)
+        except FileNotFoundError:
+            # Fallback to the old method if no template is found
+            return self._generate_template_from_render(config)
 
     def _generate_template_from_render(self, config: T) -> str:
         """Generate a template by inspecting the render() method.
