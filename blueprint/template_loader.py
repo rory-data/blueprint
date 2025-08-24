@@ -7,7 +7,7 @@ from a configurable path, defaulting to $AIRFLOW_HOME/.astro/templates.
 import logging
 import sys
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 from blueprint.config import get_output_dir
 from blueprint.errors import BlueprintError, DuplicateDAGIdError
@@ -74,10 +74,10 @@ def load_template(module_name: str, class_name: str) -> Any:
 
 
 def discover_yaml_dags(
-    configs_dir: Optional[str] = None,
-    template_dir: Optional[str] = None,
+    configs_dir: str | None = None,
+    template_dir: str | None = None,
     pattern: str = "*.dag.yaml",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Discover and load DAGs from YAML configuration files.
 
     Args:
@@ -98,7 +98,9 @@ def discover_yaml_dags(
     failed_configs = []
     dag_id_to_configs = {}  # Track DAG IDs to config files for duplicate detection
 
-    logger.info("Discovering DAG configurations in %s (pattern: %s)", configs_dir_path, pattern)
+    logger.info(
+        "Discovering DAG configurations in %s (pattern: %s)", configs_dir_path, pattern
+    )
 
     if not configs_dir_path.exists():
         logger.warning("Configuration directory does not exist: %s", configs_dir_path)
@@ -107,7 +109,9 @@ def discover_yaml_dags(
     config_files = list(configs_dir_path.glob(pattern))
     if not config_files:
         logger.warning(
-            "No configuration files found matching pattern '%s' in %s", pattern, configs_dir_path
+            "No configuration files found matching pattern '%s' in %s",
+            pattern,
+            configs_dir_path,
         )
         return dags
 
@@ -119,7 +123,12 @@ def discover_yaml_dags(
             dag = from_yaml(str(yaml_file), template_dir=template_dir)
 
             # Check for duplicate DAG IDs
-            dag_id = dag.dag_id
+            dag_id = getattr(dag, "dag_id", None)
+            if dag_id is None:
+                raise BlueprintError(
+                    f"DAG object loaded from {yaml_file} does not have a 'dag_id' attribute."
+                )
+
             if dag_id in dag_id_to_configs:
                 # Duplicate found - collect all files with this DAG ID
                 conflicting_configs = dag_id_to_configs[dag_id] + [yaml_file]
@@ -132,7 +141,11 @@ def discover_yaml_dags(
             dag_name = yaml_file.stem.replace(".dag", "")
             dags[dag_name] = dag
 
-            logger.info("✅ Loaded DAG from %s: %s", yaml_file.name, dag.dag_id)
+            logger.info(
+                "✅ Loaded DAG from %s: %s",
+                yaml_file.name,
+                getattr(dag, "dag_id", None),
+            )
 
         except DuplicateDAGIdError:
             # Re-raise duplicate DAG ID errors immediately - they should stop processing
@@ -150,14 +163,18 @@ def discover_yaml_dags(
     # Summary logging
     if failed_configs:
         logger.warning(
-            "Failed to load %d of %d DAG configurations", len(failed_configs), len(config_files)
+            "Failed to load %d of %d DAG configurations",
+            len(failed_configs),
+            len(config_files),
         )
         logger.info("Failed configurations:")
         for yaml_file, error in failed_configs:
             logger.info("  • %s: %s", yaml_file.name, type(error).__name__)
 
     if dags:
-        logger.info("Successfully loaded %d DAGs: %s", len(dags), ", ".join(sorted(dags.keys())))
+        logger.info(
+            "Successfully loaded %d DAGs: %s", len(dags), ", ".join(sorted(dags.keys()))
+        )
     else:
         logger.warning("No DAGs were successfully loaded")
 
@@ -165,8 +182,8 @@ def discover_yaml_dags(
 
 
 def auto_load_yaml_dags(
-    configs_dir: Optional[str] = None,
-    template_dir: Optional[str] = None,
+    configs_dir: str | None = None,
+    template_dir: str | None = None,
     pattern: str = "*.dag.yaml",
 ) -> None:
     """Automatically discover and register DAGs from YAML files.

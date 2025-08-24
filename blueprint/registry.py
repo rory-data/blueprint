@@ -2,27 +2,32 @@
 
 import ast
 import importlib.util
+import logging
+import operator
 import os
 import re
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Type
+from typing import Any
 
 from blueprint.core import Blueprint
 from blueprint.errors import BlueprintNotFoundError, DuplicateBlueprintError
+
+logger = logging.getLogger(__name__)
 
 
 class BlueprintRegistry:
     """Registry for discovered blueprints with caching and conflict detection."""
 
     def __init__(self):
-        self._blueprints: Dict[str, Type[Blueprint]] = {}
-        self._blueprint_locations: Dict[str, List[str]] = {}
+        """Initialise the BlueprintRegistry with empty state."""
+        self._blueprints: dict[str, type[Blueprint]] = {}
+        self._blueprint_locations: dict[str, list[str]] = {}
         self._discovered = False
-        self._template_dirs: List[Path] = []
-        self._cached_list: Optional[List[Dict[str, Any]]] = None
+        self._template_dirs: list[Path] = []
+        self._cached_list: list[dict[str, Any]] | None = None
 
-    def get_template_dirs(self) -> List[Path]:
+    def get_template_dirs(self) -> list[Path]:
         """Get all template directories to search, with environment variable override."""
         dirs = []
 
@@ -108,16 +113,16 @@ class BlueprintRegistry:
 
             except Exception as e:
                 # Log but continue discovering other files
-                print(f"Warning: Failed to load {py_file}: {e}")
+                logger.error("Warning: Failed to load %s: %s", py_file, e)
 
     def _get_blueprint_name(self, class_name: str) -> str:
         """Convert class name to blueprint name (CamelCase to snake_case)."""
         # Handle consecutive capitals and normal camelCase
-        name = re.sub("([A-Z]+)([A-Z][a-z])", r"\1_\2", class_name)
+        name = re.sub(r"([A-Z]+)([A-Z][a-z])", r"\1_\2", class_name)
         name = re.sub(r"([a-z\d])([A-Z])", r"\1_\2", name)
         return name.lower()
 
-    def get_blueprint(self, name: str) -> Type[Blueprint]:
+    def get_blueprint(self, name: str) -> type[Blueprint]:
         """Get a blueprint by name.
 
         Args:
@@ -134,7 +139,10 @@ class BlueprintRegistry:
         self.discover_blueprints()
 
         # Check for conflicts
-        if name in self._blueprint_locations and len(self._blueprint_locations[name]) > 1:
+        if (
+            name in self._blueprint_locations
+            and len(self._blueprint_locations[name]) > 1
+        ):
             raise DuplicateBlueprintError(name, self._blueprint_locations[name])
 
         # Get blueprint
@@ -143,7 +151,7 @@ class BlueprintRegistry:
 
         return self._blueprints[name]
 
-    def list_blueprints(self) -> List[Dict[str, Any]]:
+    def list_blueprints(self) -> list[dict[str, Any]]:
         """List all available blueprints with metadata.
 
         Returns:
@@ -160,9 +168,8 @@ class BlueprintRegistry:
         self._cached_list = self._list_blueprints_without_import()
         return self._cached_list
 
-    def _list_blueprints_without_import(self) -> List[Dict[str, Any]]:
+    def _list_blueprints_without_import(self) -> list[dict[str, Any]]:
         """List blueprints by scanning files without importing them."""
-
         blueprints = {}  # Use dict to detect duplicates
         blueprint_locations = {}  # Track all locations for each blueprint name
         template_dirs = self.get_template_dirs()
@@ -182,7 +189,9 @@ class BlueprintRegistry:
                     tree = ast.parse(content)
 
                     for node in ast.walk(tree):
-                        if isinstance(node, ast.ClassDef) and self._is_blueprint_class_ast(node):
+                        if isinstance(
+                            node, ast.ClassDef
+                        ) and self._is_blueprint_class_ast(node):
                             blueprint_name = self._get_blueprint_name(node.name)
 
                             # Track location for duplicate detection
@@ -225,12 +234,12 @@ class BlueprintRegistry:
                     # Skip files that can't be parsed, but re-raise DuplicateBlueprintError
                     if isinstance(e, DuplicateBlueprintError):
                         raise
-                    print(f"Warning: Could not parse {py_file}: {e}")
+                    logger.error("Warning: Could not parse %s: %s", py_file, e)
                     continue
 
-        return sorted(blueprints.values(), key=lambda x: x["name"])
+        return sorted(blueprints.values(), key=operator.itemgetter("name"))
 
-    def _raise_duplicate_error(self, blueprint_name: str, locations: List[str]) -> None:
+    def _raise_duplicate_error(self, blueprint_name: str, locations: list[str]) -> None:
         """Raise a DuplicateBlueprintError."""
         raise DuplicateBlueprintError(blueprint_name, locations)
 
@@ -248,7 +257,7 @@ class BlueprintRegistry:
                 return True
         return False
 
-    def get_blueprint_info(self, name: str) -> Dict[str, Any]:
+    def get_blueprint_info(self, name: str) -> dict[str, Any]:
         """Get detailed information about a specific blueprint.
 
         Args:
@@ -306,17 +315,17 @@ registry = BlueprintRegistry()
 
 
 # Convenience functions that use the global registry
-def get_blueprint(name: str) -> Type[Blueprint]:
+def get_blueprint(name: str) -> type[Blueprint]:
     """Get a blueprint by name from the global registry."""
     return registry.get_blueprint(name)
 
 
-def list_blueprints() -> List[Dict[str, Any]]:
+def list_blueprints() -> list[dict[str, Any]]:
     """List all available blueprints from the global registry."""
     return registry.list_blueprints()
 
 
-def get_blueprint_info(name: str) -> Dict[str, Any]:
+def get_blueprint_info(name: str) -> dict[str, Any]:
     """Get detailed information about a blueprint from the global registry."""
     return registry.get_blueprint_info(name)
 

@@ -147,7 +147,9 @@ job_id: test-dag
 """)
 
         runner = CliRunner()
-        result = runner.invoke(cli, ["lint", str(config_file), "--template-dir", str(template_dir)])
+        result = runner.invoke(
+            cli, ["lint", str(config_file), "--template-dir", str(template_dir)]
+        )
         assert result.exit_code == 0
         assert "✅" in result.output
         assert "Valid" in result.output
@@ -182,7 +184,9 @@ retries: 10
 """)
 
         runner = CliRunner()
-        result = runner.invoke(cli, ["lint", str(config_file), "--template-dir", str(template_dir)])
+        result = runner.invoke(
+            cli, ["lint", str(config_file), "--template-dir", str(template_dir)]
+        )
         assert result.exit_code == 1
         assert "❌" in result.output
 
@@ -210,7 +214,9 @@ retries: 10
         with chdir(tmp_path):
             runner = CliRunner()
             # Provide custom values: template_path, output_dir, create_dag_loader, loader_path, create_example
-            result = runner.invoke(cli, ["init"], input="custom/templates\ncustom/output\ny\n\ny\n")
+            result = runner.invoke(
+                cli, ["init"], input="custom/templates\ncustom/output\ny\n\ny\n"
+            )
             assert result.exit_code == 0
 
             # Check config content
@@ -380,7 +386,9 @@ job_id: single-dag-id
 """)
 
         runner = CliRunner()
-        result = runner.invoke(cli, ["lint", str(config_file), "--template-dir", str(template_dir)])
+        result = runner.invoke(
+            cli, ["lint", str(config_file), "--template-dir", str(template_dir)]
+        )
         assert result.exit_code == 0  # Should pass
         assert "✅" in result.output
         assert "Valid" in result.output

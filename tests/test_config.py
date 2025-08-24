@@ -75,8 +75,9 @@ template_path = "/secondary/templates"
         # Mock tomllib as None to simulate missing tomli
         monkeypatch.setattr("blueprint.config.tomllib", None)
 
-        with chdir(tmp_path), pytest.raises(
-            ImportError, match="tomli is required for Python <3.11"
+        with (
+            chdir(tmp_path),
+            pytest.raises(ImportError, match="tomli is required for Python <3.11"),
         ):
             load_config()
 
@@ -88,7 +89,10 @@ template_path = "/test"
 invalid_syntax =
 """)
 
-        with chdir(tmp_path), pytest.raises((ValueError, TypeError)):  # TOML parsing errors
+        with (
+            chdir(tmp_path),
+            pytest.raises((ValueError, TypeError)),
+        ):  # TOML parsing errors
             load_config()
 
 
@@ -101,8 +105,9 @@ class TestTemplatePath:
         config_file = tmp_path / "blueprint.toml"
         config_file.write_text('template_path = "/config/templates"')
 
-        with chdir(tmp_path), mock.patch.dict(
-            os.environ, {"BLUEPRINT_TEMPLATE_PATH": "/env/templates"}
+        with (
+            chdir(tmp_path),
+            mock.patch.dict(os.environ, {"BLUEPRINT_TEMPLATE_PATH": "/env/templates"}),
         ):
             path = get_template_path(cli_value="/cli/templates")
             assert path == "/cli/templates"
@@ -112,8 +117,9 @@ class TestTemplatePath:
         config_file = tmp_path / "blueprint.toml"
         config_file.write_text('template_path = "/config/templates"')
 
-        with chdir(tmp_path), mock.patch.dict(
-            os.environ, {"BLUEPRINT_TEMPLATE_PATH": "/env/templates"}
+        with (
+            chdir(tmp_path),
+            mock.patch.dict(os.environ, {"BLUEPRINT_TEMPLATE_PATH": "/env/templates"}),
         ):
             path = get_template_path()
             assert path == "/env/templates"
@@ -136,8 +142,11 @@ class TestTemplatePath:
 
     def test_custom_airflow_home(self, tmp_path, chdir):
         """Test default with custom AIRFLOW_HOME."""
-        with chdir(tmp_path), mock.patch.dict(
-            os.environ, {"AIRFLOW_HOME": "/custom/airflow"}, clear=True
+        with (
+            chdir(tmp_path),
+            mock.patch.dict(
+                os.environ, {"AIRFLOW_HOME": "/custom/airflow"}, clear=True
+            ),
         ):
             path = get_template_path()
             assert path == "/custom/airflow/.astro/templates"
@@ -213,8 +222,9 @@ template_path = "/config/templates"
 output_dir = "/config/output"
 """)
 
-        with chdir(tmp_path), mock.patch.dict(
-            os.environ, {"BLUEPRINT_TEMPLATE_PATH": "/env/templates"}
+        with (
+            chdir(tmp_path),
+            mock.patch.dict(os.environ, {"BLUEPRINT_TEMPLATE_PATH": "/env/templates"}),
         ):
             template_path = get_template_path()
             output_dir = get_output_dir()
@@ -242,9 +252,13 @@ output_dir = "/config/output"
         config_file = tmp_path / "blueprint.toml"
         config_file.write_text('template_path = "/only/templates"')
 
-        with chdir(tmp_path), mock.patch(
-            "blueprint.utils.get_airflow_dags_folder"
-        ) as mock_get_dags_folder, mock.patch.dict(os.environ, {}, clear=True):
+        with (
+            chdir(tmp_path),
+            mock.patch(
+                "blueprint.utils.get_airflow_dags_folder"
+            ) as mock_get_dags_folder,
+            mock.patch.dict(os.environ, {}, clear=True),
+        ):
             mock_get_dags_folder.return_value = Path("/airflow/dags")
 
             template_path = get_template_path()

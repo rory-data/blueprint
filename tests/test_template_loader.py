@@ -52,7 +52,9 @@ schedule: "@hourly"
         (configs_dir / "sales.dag.yaml").write_text(config2)
 
         # Discover DAGs - should work without errors
-        dags = discover_yaml_dags(configs_dir=str(configs_dir), template_dir=str(template_dir))
+        dags = discover_yaml_dags(
+            configs_dir=str(configs_dir), template_dir=str(template_dir)
+        )
 
         assert len(dags) == 2
         assert "customer" in dags
@@ -104,7 +106,9 @@ schedule: "@hourly"
 
         # Discover DAGs - should raise DuplicateDAGIdError
         with pytest.raises(DuplicateDAGIdError) as exc_info:
-            discover_yaml_dags(configs_dir=str(configs_dir), template_dir=str(template_dir))
+            discover_yaml_dags(
+                configs_dir=str(configs_dir), template_dir=str(template_dir)
+            )
 
         error = exc_info.value
         assert error.dag_id == "duplicate-dag-id"
@@ -163,7 +167,9 @@ schedule: "@weekly"
 
         # Discover DAGs - should raise DuplicateDAGIdError
         with pytest.raises(DuplicateDAGIdError) as exc_info:
-            discover_yaml_dags(configs_dir=str(configs_dir), template_dir=str(template_dir))
+            discover_yaml_dags(
+                configs_dir=str(configs_dir), template_dir=str(template_dir)
+            )
 
         error = exc_info.value
         assert error.dag_id == "duplicate-dag"
@@ -178,7 +184,9 @@ schedule: "@weekly"
         template_dir.mkdir()
 
         # Should return empty dict, no error
-        dags = discover_yaml_dags(configs_dir=str(configs_dir), template_dir=str(template_dir))
+        dags = discover_yaml_dags(
+            configs_dir=str(configs_dir), template_dir=str(template_dir)
+        )
 
         assert len(dags) == 0
 
@@ -189,6 +197,8 @@ schedule: "@weekly"
         template_dir.mkdir()
 
         # Should return empty dict, no error
-        dags = discover_yaml_dags(configs_dir=str(configs_dir), template_dir=str(template_dir))
+        dags = discover_yaml_dags(
+            configs_dir=str(configs_dir), template_dir=str(template_dir)
+        )
 
         assert len(dags) == 0

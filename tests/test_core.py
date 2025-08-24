@@ -1,7 +1,7 @@
 """Tests for core Blueprint functionality."""
 
 import inspect
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 from airflow import DAG
@@ -31,7 +31,7 @@ class TestBlueprint:
                 return DAG(
                     dag_id=config.job_id,
                     schedule=config.schedule,
-                    start_date=datetime(2024, 1, 1, tzinfo=timezone.utc),
+                    start_date=datetime(2024, 1, 1, tzinfo=UTC),
                     catchup=False,
                 )
 
@@ -58,20 +58,26 @@ class TestBlueprint:
                 return DAG(
                     dag_id=config.job_id,
                     default_args={"retries": config.retries},
-                    start_date=datetime(2024, 1, 1, tzinfo=timezone.utc),
+                    start_date=datetime(2024, 1, 1, tzinfo=UTC),
                 )
 
         # Valid config should work
-        dag = ValidatedBlueprint.build(job_id="valid_dag", retries=EXPECTED_RETRIES_VALUE)
+        dag = ValidatedBlueprint.build(
+            job_id="valid_dag", retries=EXPECTED_RETRIES_VALUE
+        )
         assert dag.dag_id == "valid_dag"
         assert dag.default_args["retries"] == EXPECTED_RETRIES_VALUE
 
         # Invalid job_id should raise validation error
-        with pytest.raises(ValueError):  # Pydantic will raise validation error
-            ValidatedBlueprint.build(job_id="invalid dag!", retries=EXPECTED_RETRIES_VALUE)
+        with pytest.raises(
+            ValueError, match="String should match pattern"
+        ):  # Pydantic will raise validation error
+            ValidatedBlueprint.build(
+                job_id="invalid dag!", retries=EXPECTED_RETRIES_VALUE
+            )
 
         # Invalid retries should raise validation error
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="Input should be less than or equal to"):
             ValidatedBlueprint.build(job_id="valid_dag", retries=10)
 
     def test_blueprint_method_signature(self):
@@ -86,7 +92,7 @@ class TestBlueprint:
         class TypedBlueprint(Blueprint[TypedConfig]):
             def render(self, config: TypedConfig) -> DAG:
                 return DAG(
-                    dag_id=config.job_id, start_date=datetime(2024, 1, 1, tzinfo=timezone.utc)
+                    dag_id=config.job_id, start_date=datetime(2024, 1, 1, tzinfo=UTC)
                 )
 
         # Check signature - for classmethod, inspect the __func__ attribute
@@ -114,7 +120,7 @@ class TestBlueprint:
         class SchemaBlueprint(Blueprint[SchemaConfig]):
             def render(self, config: SchemaConfig) -> DAG:
                 return DAG(
-                    dag_id=config.job_id, start_date=datetime(2024, 1, 1, tzinfo=timezone.utc)
+                    dag_id=config.job_id, start_date=datetime(2024, 1, 1, tzinfo=UTC)
                 )
 
         schema = SchemaBlueprint.get_schema()

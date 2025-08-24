@@ -120,7 +120,7 @@ class MyBlueprint(Blueprint[MyConfig]):
             schedule=config.schedule,
             # ... your DAG logic
         )
-    
+
     def render_template(self, config: MyConfig) -> str:
         """Build-time template generation."""
         return f'''

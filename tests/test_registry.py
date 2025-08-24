@@ -165,7 +165,9 @@ class TestBlueprint(Blueprint[Config]):
         assert "templates1/test.py" in str(error)
         assert "templates2/test.py" in str(error)
 
-    def test_list_blueprints_with_metadata(self, registry, temp_blueprints, monkeypatch):
+    def test_list_blueprints_with_metadata(
+        self, registry, temp_blueprints, monkeypatch
+    ):
         """Test listing blueprints with full metadata."""
         monkeypatch.setattr(registry, "get_template_dirs", lambda: [temp_blueprints])
         registry.discover_blueprints()

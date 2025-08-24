@@ -1,7 +1,7 @@
 """YAML loading and blueprint discovery functionality."""
 
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import yaml
 
@@ -10,7 +10,9 @@ from blueprint.errors import ConfigurationError, YAMLParseError
 from blueprint.registry import BlueprintRegistry, registry
 
 
-def load_blueprint(blueprint_name: str, template_dir: Optional[str] = None) -> type[Blueprint]:
+def load_blueprint(
+    blueprint_name: str, template_dir: str | None = None
+) -> type[Blueprint]:
     """Load a blueprint class by name.
 
     Args:
@@ -42,8 +44,8 @@ def load_blueprint(blueprint_name: str, template_dir: Optional[str] = None) -> t
 
 def from_yaml(
     path: str,
-    overrides: Optional[Dict[str, Any]] = None,
-    template_dir: Optional[str] = None,
+    overrides: dict[str, Any] | None = None,
+    template_dir: str | None = None,
     validate_only: bool = False,
 ):
     """Load a blueprint from YAML configuration.
@@ -133,7 +135,7 @@ def from_yaml(
         raise
 
 
-def discover_blueprints(template_dir: Optional[str] = None) -> List[Dict[str, Any]]:
+def discover_blueprints(template_dir: str | None = None) -> list[dict[str, Any]]:
     """Discover all available blueprints.
 
     Args:
@@ -158,7 +160,9 @@ def discover_blueprints(template_dir: Optional[str] = None) -> List[Dict[str, An
     return registry.list_blueprints()
 
 
-def get_blueprint_info(blueprint_name: str, template_dir: Optional[str] = None) -> Dict[str, Any]:
+def get_blueprint_info(
+    blueprint_name: str, template_dir: str | None = None
+) -> dict[str, Any]:
     """Get detailed information about a specific blueprint.
 
     Args:

@@ -23,7 +23,6 @@ class TestLoaders:
 
     def test_load_blueprint_from_yaml(self, tmp_path):
         """Test loading a blueprint from YAML configuration."""
-
         # Create a test blueprint
         blueprint_code = """
 from blueprint import Blueprint, BaseModel, Field
@@ -66,7 +65,6 @@ param1: custom-value
 
     def test_yaml_with_overrides(self, tmp_path):
         """Test loading YAML with parameter overrides."""
-
         # Create a test blueprint
         blueprint_code = """
 from blueprint import Blueprint, BaseModel
@@ -110,7 +108,6 @@ retries: 3
 
     def test_discover_blueprints(self, tmp_path):
         """Test discovering available blueprints."""
-
         # Create multiple blueprints
         blueprint_code = '''
 from blueprint import Blueprint, BaseModel, Field
@@ -160,7 +157,6 @@ class NotABlueprint:
 
     def test_get_blueprint_info(self, tmp_path):
         """Test getting detailed blueprint information."""
-
         blueprint_code = '''
 from blueprint import Blueprint, BaseModel, Field
 from airflow import DAG
@@ -200,21 +196,24 @@ class DetailedBlueprint(Blueprint[DetailedConfig]):
         assert params["retries"]["maximum"] == EXPECTED_MAX_RETRIES
 
         # Check defaults
-        assert info["defaults"] == {"retries": EXPECTED_DEFAULT_RETRIES, "enabled": True}
+        assert info["defaults"] == {
+            "retries": EXPECTED_DEFAULT_RETRIES,
+            "enabled": True,
+        }
 
     def test_load_nonexistent_blueprint(self, tmp_path):
         """Test error when loading non-existent blueprint."""
-
         # Create empty template dir
         template_dir = tmp_path / "templates"
         template_dir.mkdir()
 
-        with pytest.raises(BlueprintNotFoundError, match="Blueprint 'nonexistent' not found"):
+        with pytest.raises(
+            BlueprintNotFoundError, match="Blueprint 'nonexistent' not found"
+        ):
             load_blueprint("nonexistent", str(template_dir))
 
     def test_yaml_missing_blueprint_field(self, tmp_path):
         """Test error when YAML is missing blueprint field."""
-
         yaml_content = """
 job_id: test-dag
 param1: value
@@ -222,12 +221,13 @@ param1: value
         config_file = tmp_path / "bad.yaml"
         config_file.write_text(yaml_content)
 
-        with pytest.raises(ConfigurationError, match="Missing required field 'blueprint'"):
+        with pytest.raises(
+            ConfigurationError, match="Missing required field 'blueprint'"
+        ):
             from_yaml(str(config_file))
 
     def test_empty_yaml_file(self, tmp_path):
         """Test error with empty YAML file."""
-
         config_file = tmp_path / "empty.yaml"
         config_file.write_text("")
 

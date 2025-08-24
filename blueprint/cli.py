@@ -3,7 +3,6 @@
 import json
 import sys
 from pathlib import Path
-from typing import Dict, List, Optional
 
 import click
 import yaml
@@ -38,7 +37,7 @@ def cli():
     """
 
 
-def _get_configs_to_check(path: Optional[str]) -> List[Path]:
+def _get_configs_to_check(path: str | None) -> list[Path]:
     """Get list of configuration files to check."""
     configs_to_check = []
 
@@ -54,17 +53,22 @@ def _get_configs_to_check(path: Optional[str]) -> List[Path]:
 
 def _validate_config(
     config_path: Path, template_dir: str
-) -> tuple[bool, Optional[str], Optional[object]]:
+) -> tuple[bool, str | None, object | None]:
     """Validate a single configuration file.
 
     Returns:
         tuple of (success, job_id, config)
     """
     try:
-        config = from_yaml(str(config_path), template_dir=template_dir, validate_only=True)
+        config = from_yaml(
+            str(config_path), template_dir=template_dir, validate_only=True
+        )
     except Exception as e:
         console.print(f"❌ {config_path}")
-        if hasattr(e, "_format_message") and callable(e._format_message):
+        # Print formatted message if available, otherwise print generic error
+        if hasattr(e, "_format_message") and callable(
+            getattr(e, "_format_message", None)
+        ):
             console.print(e._format_message())  # type: ignore[misc]
         else:
             console.print(f"  [red]Error:[/red] {e}")
@@ -75,7 +79,7 @@ def _validate_config(
         return True, job_id, config
 
 
-def _check_duplicate_dag_ids(dag_ids_to_files: Dict[str, List[Path]]) -> bool:
+def _check_duplicate_dag_ids(dag_ids_to_files: dict[str, list[Path]]) -> bool:
     """Check for duplicate DAG IDs and report errors.
 
     Returns:
@@ -94,7 +98,7 @@ def _check_duplicate_dag_ids(dag_ids_to_files: Dict[str, List[Path]]) -> bool:
 @cli.command()
 @click.argument("path", required=False, type=click.Path(exists=True))
 @click.option("--template-dir", default=None, help="Template directory path")
-def lint(path: Optional[str], template_dir: Optional[str]):
+def lint(path: str | None, template_dir: str | None):
     """Validate blueprint configurations.
 
     If PATH is provided, validate a specific file.
@@ -126,7 +130,11 @@ def lint(path: Optional[str], template_dir: Optional[str]):
             errors_found = True
 
     # Second pass: check for duplicate DAG IDs (only if multiple files and no validation errors)
-    if len(valid_configs) > 1 and not errors_found and _check_duplicate_dag_ids(dag_ids_to_files):
+    if (
+        len(valid_configs) > 1
+        and not errors_found
+        and _check_duplicate_dag_ids(dag_ids_to_files)
+    ):
         errors_found = True
 
     if errors_found:
@@ -135,7 +143,7 @@ def lint(path: Optional[str], template_dir: Optional[str]):
 
 @cli.command("list")
 @click.option("--template-dir", default=None, help="Template directory path")
-def list_blueprints(template_dir: Optional[str]):
+def list_blueprints(template_dir: str | None):
     """List available blueprints."""
     template_dir = get_template_path(template_dir)
     blueprints = discover_blueprints(template_dir)
@@ -160,7 +168,7 @@ def list_blueprints(template_dir: Optional[str]):
 @cli.command()
 @click.argument("blueprint_name")
 @click.option("--template-dir", default=None, help="Template directory path")
-def describe(blueprint_name: str, template_dir: Optional[str]):
+def describe(blueprint_name: str, template_dir: str | None):
     """Show blueprint parameters and documentation."""
     template_dir = get_template_path(template_dir)
     try:
@@ -216,8 +224,12 @@ def describe(blueprint_name: str, template_dir: Optional[str]):
 @cli.command()
 @click.argument("blueprint_name")
 @click.option("--output", "-o", type=click.Path(), help="Output file (default: stdout)")
-@click.option("--template-dir", default="dags/blueprints/templates", help="Template directory path")
-def schema(blueprint_name: str, output: Optional[str], template_dir: str):
+@click.option(
+    "--template-dir",
+    default="dags/blueprints/templates",
+    help="Template directory path",
+)
+def schema(blueprint_name: str, output: str | None, template_dir: str):
     """Generate JSON Schema for a blueprint.
 
     This can be used for YAML validation in editors like VS Code.
@@ -281,7 +293,9 @@ def _convert_param_value(value, param_info):
             try:
                 return int(value)
             except ValueError:
-                console.print("[yellow]Warning: Expected integer, using string[/yellow]")
+                console.print(
+                    "[yellow]Warning: Expected integer, using string[/yellow]"
+                )
                 return value
         elif param_info["type"] == "boolean":
             return value.lower() in ("true", "yes", "1", "on")
@@ -329,7 +343,9 @@ def _validate_configuration(blueprint_name, config, template_dir):
     try:
         blueprint_class = load_blueprint(blueprint_name, template_dir)
         # This will validate the config
-        _ = blueprint_class.build(**{k: v for k, v in config.items() if k != "blueprint"})
+        _ = blueprint_class.build(
+            **{k: v for k, v in config.items() if k != "blueprint"}
+        )
         console.print("\n[green]✅ Configuration is valid![/green]")
     except Exception as e:
         console.print(f"\n[red]Configuration error:[/red] {e}")
@@ -350,7 +366,9 @@ def _save_configuration(config, blueprint_name, output_dir):
     file_path = output_path / filename
 
     # Check if file exists
-    if file_path.exists() and not click.confirm(f"{file_path} already exists. Overwrite?"):
+    if file_path.exists() and not click.confirm(
+        f"{file_path} already exists. Overwrite?"
+    ):
         sys.exit(0)
 
     # Write YAML
@@ -358,13 +376,15 @@ def _save_configuration(config, blueprint_name, output_dir):
         yaml.dump(config, f, default_flow_style=False, sort_keys=False)
 
     console.print(f"\n[green]Created {file_path}[/green]")
-    console.print("\nTo use this DAG, ensure the YAML loader is in your DAGs directory.")
+    console.print(
+        "\nTo use this DAG, ensure the YAML loader is in your DAGs directory."
+    )
 
 
 @cli.command()
 @click.option("--template-dir", default=None, help="Template directory path")
 @click.option("--output-dir", default=None, help="Output directory for YAML config")
-def new(template_dir: Optional[str], output_dir: Optional[str]):
+def new(template_dir: str | None, output_dir: str | None):
     """Interactively create a new DAG from a blueprint."""
     template_dir = get_template_path(template_dir)
     output_dir = get_output_dir(output_dir)
@@ -402,7 +422,7 @@ def _load_template(template_name: str) -> str:
     return template_path.read_text()
 
 
-def detect_environment() -> Dict[str, str]:
+def detect_environment() -> dict[str, str]:
     """Detect project structure and suggest defaults."""
     suggestions = {}
 
@@ -414,12 +434,16 @@ def detect_environment() -> Dict[str, str]:
         # Try to get dags folder from Airflow
         try:
             suggestions["dags_folder"] = str(get_airflow_dags_folder())
-            suggestions["template_path"] = f"{suggestions['dags_folder']}/blueprints/templates"
+            suggestions["template_path"] = (
+                f"{suggestions['dags_folder']}/blueprints/templates"
+            )
         except Exception:
             suggestions["dags_folder"] = "dags"
             suggestions["template_path"] = "dags/blueprints/templates"
 
-    suggestions["output_dir"] = f"{suggestions.get('dags_folder', 'dags')}/blueprints/instances"
+    suggestions["output_dir"] = (
+        f"{suggestions.get('dags_folder', 'dags')}/blueprints/instances"
+    )
     return suggestions
 
 
@@ -433,7 +457,9 @@ def create_dag_loader(path: str, template_path: str, output_dir: str, force: boo
 
     loader_path = Path(path)
     if loader_path.exists() and not force:
-        console.print(f"[yellow]  {path} already exists. Use --force to overwrite.[/yellow]")
+        console.print(
+            f"[yellow]  {path} already exists. Use --force to overwrite.[/yellow]"
+        )
         return
 
     loader_path.parent.mkdir(parents=True, exist_ok=True)
@@ -519,7 +545,9 @@ def init(force: bool):
 
     loader_path = None
     if setup_loader:
-        default_loader_path = f"{detected_env.get('dags_folder', 'dags')}/blueprints/loader.py"
+        default_loader_path = (
+            f"{detected_env.get('dags_folder', 'dags')}/blueprints/loader.py"
+        )
         loader_path = click.prompt("  DAG loader location", default=default_loader_path)
 
     # 4. Example blueprint
@@ -536,7 +564,9 @@ def init(force: bool):
 
     config_path = Path("blueprint.toml")
     if config_path.exists() and not force:
-        console.print("[yellow]  blueprint.toml already exists. Use --force to overwrite.[/yellow]")
+        console.print(
+            "[yellow]  blueprint.toml already exists. Use --force to overwrite.[/yellow]"
+        )
     else:
         config_path.write_text(config_content)
         console.print("  ✅ Created blueprint.toml")
@@ -557,110 +587,135 @@ def init(force: bool):
     console.print("\n[bold]Next steps:[/bold]")
     console.print("  1. Run [cyan]blueprint list[/cyan] to see available blueprints")
     if create_example:
-        console.print("  2. Run [cyan]blueprint new[/cyan] to create a DAG from the example")
-    console.print("  3. Commit [cyan]blueprint.toml[/cyan] to share configuration with your team")
+        console.print(
+            "  2. Run [cyan]blueprint new[/cyan] to create a DAG from the example"
+        )
+    console.print(
+        "  3. Commit [cyan]blueprint.toml[/cyan] to share configuration with your team"
+    )
     if setup_loader:
         console.print(f"  4. Ensure [cyan]{loader_path}[/cyan] is in your DAGs folder")
 
 
 @cli.command()
-@click.option("--config-dir", default=None, help="Directory containing YAML configuration files")
-@click.option("--output-dir", default=None, help="Directory to output generated DAG files")
+@click.option(
+    "--config-dir", default=None, help="Directory containing YAML configuration files"
+)
+@click.option(
+    "--output-dir", default=None, help="Directory to output generated DAG files"
+)
 @click.option("--template-dir", default=None, help="Template directory path")
-@click.option("--pattern", default="*.dag.yaml", help="File pattern to match for configs")
+@click.option(
+    "--pattern", default="*.dag.yaml", help="File pattern to match for configs"
+)
 @click.option("--force", is_flag=True, help="Overwrite existing DAG files")
-def build(config_dir: Optional[str], output_dir: Optional[str], template_dir: Optional[str], 
-          pattern: str, force: bool):
+def build(
+    config_dir: str | None,
+    output_dir: str | None,
+    template_dir: str | None,
+    pattern: str,
+    force: bool,
+):
     """Build DAG files from YAML configurations.
-    
+
     Generates Python DAG files from Blueprint templates and YAML configurations.
     This allows you to pre-generate DAG files for deployment rather than using
     runtime generation.
-    
+
     Examples:
         blueprint build                    # Build all configs in current dir to ./dags/
         blueprint build --output-dir /tmp  # Build to specific output directory
         blueprint build --config-dir configs --output-dir dags
     """
     from blueprint import load_blueprint
-    
+
     # Set defaults
     config_dir = config_dir or get_output_dir()
     output_dir = output_dir or "dags"
     template_dir = get_template_path(template_dir)
-    
+
     config_dir_path = Path(config_dir)
     output_dir_path = Path(output_dir)
-    
+
     # Ensure output directory exists
     output_dir_path.mkdir(parents=True, exist_ok=True)
-    
+
     # Find configuration files
     if not config_dir_path.exists():
-        console.print(f"[red]Configuration directory does not exist: {config_dir_path}[/red]")
+        console.print(
+            f"[red]Configuration directory does not exist: {config_dir_path}[/red]"
+        )
         sys.exit(1)
-    
+
     config_files = list(config_dir_path.glob(pattern))
     if not config_files:
-        console.print(f"[yellow]No configuration files found matching pattern '{pattern}' in {config_dir_path}[/yellow]")
+        console.print(
+            f"[yellow]No configuration files found matching pattern '{pattern}' in {config_dir_path}[/yellow]"
+        )
         return
-    
-    console.print(f"[blue]Building DAG files from {len(config_files)} configuration(s)...[/blue]")
+
+    console.print(
+        f"[blue]Building DAG files from {len(config_files)} configuration(s)...[/blue]"
+    )
     console.print(f"  Input:  {config_dir_path}")
     console.print(f"  Output: {output_dir_path}")
     console.print(f"  Pattern: {pattern}")
-    
+
     built_count = 0
     failed_count = 0
-    
+
     for config_file in config_files:
         try:
             # Load YAML configuration
             with config_file.open() as f:
                 config_data = yaml.safe_load(f)
-            
-            blueprint_name = config_data.get('blueprint')
+
+            blueprint_name = config_data.get("blueprint")
             if not blueprint_name:
-                console.print(f"[red]❌ {config_file.name}: No 'blueprint' specified[/red]")
+                console.print(
+                    f"[red]❌ {config_file.name}: No 'blueprint' specified[/red]"
+                )
                 failed_count += 1
                 continue
-            
+
             # Load blueprint class
             blueprint_class = load_blueprint(blueprint_name, template_dir)
-            
+
             # Extract config parameters (exclude 'blueprint' key)
-            config_params = {k: v for k, v in config_data.items() if k != 'blueprint'}
-            
+            config_params = {k: v for k, v in config_data.items() if k != "blueprint"}
+
             # Generate template code
             template_code = blueprint_class.build_template(**config_params)
-            
+
             # Determine output file name
-            dag_name = config_file.stem.replace('.dag', '')
+            dag_name = config_file.stem.replace(".dag", "")
             output_file = output_dir_path / f"{dag_name}.py"
-            
+
             # Check if file exists and handle overwrite
             if output_file.exists() and not force:
-                console.print(f"[yellow]⚠️  {config_file.name}: Output file {output_file.name} exists (use --force to overwrite)[/yellow]")
+                console.print(
+                    f"[yellow]⚠️  {config_file.name}: Output file {output_file.name} exists (use --force to overwrite)[/yellow]"
+                )
                 failed_count += 1
                 continue
-            
+
             # Write the generated code
             output_file.write_text(template_code)
             console.print(f"[green]✅ {config_file.name} → {output_file.name}[/green]")
             built_count += 1
-            
+
         except Exception as e:
             console.print(f"[red]❌ {config_file.name}: {e}[/red]")
             failed_count += 1
-    
+
     # Summary
-    console.print(f"\n[blue]Build completed:[/blue]")
+    console.print("\n[blue]Build completed:[/blue]")
     console.print(f"  ✅ Built: {built_count}")
     if failed_count > 0:
         console.print(f"  ❌ Failed: {failed_count}")
         sys.exit(1)
     else:
-        console.print(f"  🎉 All DAG files generated successfully!")
+        console.print("  🎉 All DAG files generated successfully!")
 
 
 def main():

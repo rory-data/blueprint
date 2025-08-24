@@ -15,7 +15,7 @@ class MultiSourceETLConfig(BaseModel):
 
 class MultiSourceETL(Blueprint[MultiSourceETLConfig]):
     """ETL job that combines data from multiple sources.
-    
+
     This blueprint uses a Jinja2 template (multi_source_etl.j2) to generate DAGs,
     following DRY principles with a single source of truth for the DAG structure.
     """

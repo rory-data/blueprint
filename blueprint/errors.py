@@ -2,7 +2,7 @@
 
 import difflib
 from pathlib import Path
-from typing import Any, List, Optional
+from typing import Any
 
 import yaml
 
@@ -20,11 +20,20 @@ class ConfigurationError(BlueprintError):
     def __init__(
         self,
         message: str,
-        file_path: Optional[Path] = None,
-        line_number: Optional[int] = None,
-        column: Optional[int] = None,
-        suggestions: Optional[List[str]] = None,
+        file_path: Path | None = None,
+        line_number: int | None = None,
+        column: int | None = None,
+        suggestions: list[str] | None = None,
     ):
+        """Initialise a configuration error with context and suggestions.
+
+        Args:
+            message: The error message describing the issue
+            file_path: Optional path to the file where the error occurred
+            line_number: Optional line number where the error occurred
+            column: Optional column number where the error occurred
+            suggestions: Optional list of suggested fixes for the error
+        """
         self.message = message
         self.file_path = file_path
         self.line_number = line_number
@@ -60,14 +69,14 @@ class ConfigurationError(BlueprintError):
 
         # Suggestions
         if self.suggestions:
-            lines.append("")
-            lines.append("  💡 Suggestions:")
+            lines.extend("")
+            lines.extend("  💡 Suggestions:")
             for suggestion in self.suggestions:
-                lines.append(f"    • {suggestion}")
+                lines.extend(f"    • {suggestion}")
 
         return "\n".join(lines)
 
-    def _get_file_context(self) -> List[str]:
+    def _get_file_context(self) -> list[str]:
         """Get surrounding lines from file for context."""
         if not self.file_path or not self.file_path.exists() or not self.line_number:
             return []
@@ -90,7 +99,9 @@ class ConfigurationError(BlueprintError):
                 if line_num == self.line_number and self.column:
                     context_lines.append(f"{marker}{line_num:3} | {line_content}")
                     # Add arrow pointing to column
-                    arrow_line = " " * (len(f"{marker}{line_num:3} | ") + self.column - 1) + "^"
+                    arrow_line = (
+                        " " * (len(f"{marker}{line_num:3} | ") + self.column - 1) + "^"
+                    )
                     context_lines.append(arrow_line)
                 else:
                     context_lines.append(f"{marker}{line_num:3} | {line_content}")
@@ -103,7 +114,15 @@ class ConfigurationError(BlueprintError):
 class BlueprintNotFoundError(BlueprintError):
     """Blueprint not found error with suggestions."""
 
-    def __init__(self, blueprint_name: str, available_blueprints: Optional[List[str]] = None):
+    def __init__(
+        self, blueprint_name: str, available_blueprints: list[str] | None = None
+    ):
+        """Initialise a BlueprintNotFoundError with suggestions for similar blueprints.
+
+        Args:
+            blueprint_name: The name of the blueprint that was not found
+            available_blueprints: Optional list of available blueprint names for suggestions
+        """
         self.blueprint_name = blueprint_name
         self.available_blueprints = available_blueprints or []
 
@@ -119,7 +138,9 @@ class BlueprintNotFoundError(BlueprintError):
                     suggestions.append(f"Did you mean '{similar[0]}'?")
                 else:
                     similar_quoted = [f"'{s}'" for s in similar]
-                    suggestions.append(f"Did you mean one of: {', '.join(similar_quoted)}?")
+                    suggestions.append(
+                        f"Did you mean one of: {', '.join(similar_quoted)}?"
+                    )
 
             suggestions.append(
                 f"Available blueprints: {', '.join(sorted(self.available_blueprints))}"
@@ -136,7 +157,8 @@ class BlueprintNotFoundError(BlueprintError):
 
         message = f"Blueprint '{blueprint_name}' not found"
         super().__init__(
-            f"{message}\n\n💡 Suggestions:\n" + "\n".join(f"  • {s}" for s in suggestions)
+            f"{message}\n\n💡 Suggestions:\n"
+            + "\n".join(f"  • {s}" for s in suggestions)
         )
 
 
@@ -146,11 +168,20 @@ class ValidationError(BlueprintError):
     def __init__(
         self,
         message: str,
-        field_name: Optional[str] = None,
-        expected_type: Optional[str] = None,
-        actual_value: Optional[Any] = None,
-        suggestions: Optional[List[str]] = None,
+        field_name: str | None = None,
+        expected_type: str | None = None,
+        actual_value: Any | None = None,
+        suggestions: list[str] | None = None,
     ):
+        """Initialise a validation error with detailed context.
+
+        Args:
+            message: The error message describing the validation failure
+            field_name: Optional name of the field that failed validation
+            expected_type: Optional string describing the expected type
+            actual_value: Optional actual value that caused the validation failure
+            suggestions: Optional list of suggested fixes for the error
+        """
         self.field_name = field_name
         self.expected_type = expected_type
         self.actual_value = actual_value
@@ -176,21 +207,24 @@ class YAMLParseError(ConfigurationError):
     """YAML parsing error with line number context."""
 
     @classmethod
-    def from_yaml_error(cls, yaml_error: yaml.YAMLError, file_path: Path) -> "YAMLParseError":
+    def from_yaml_error(
+        cls, yaml_error: yaml.YAMLError, file_path: Path
+    ) -> "YAMLParseError":
         """Create from a yaml.YAMLError with extracted line information."""
         line_number = None
         column = None
         message = str(yaml_error)
 
         # Try to extract line number from yaml error
-        if hasattr(yaml_error, "problem_mark"):
-            mark = yaml_error.problem_mark
-            line_number = mark.line + 1  # YAML uses 0-based indexing  # type: ignore[attr-defined]
-            column = mark.column + 1  # type: ignore[attr-defined]
+        mark = getattr(yaml_error, "problem_mark", None)
+        if mark is not None:
+            line_number = mark.line + 1  # YAML uses 0-based indexing
+            column = mark.column + 1
 
         # Extract problem description
-        if hasattr(yaml_error, "problem"):
-            message = yaml_error.problem or message
+        problem = getattr(yaml_error, "problem", None)
+        if problem:
+            message = problem
 
         suggestions = [
             "Check YAML syntax (proper indentation, quotes, etc.)",
@@ -204,11 +238,19 @@ class YAMLParseError(ConfigurationError):
 class DuplicateBlueprintError(BlueprintError):
     """Error when duplicate blueprint names are found."""
 
-    def __init__(self, blueprint_name: str, locations: List[str]):
+    def __init__(self, blueprint_name: str, locations: list[str]):
+        """Initialise a DuplicateBlueprintError with blueprint name and locations.
+
+        Args:
+            blueprint_name: The name of the blueprint that appears in multiple locations
+            locations: List of file paths or locations where the duplicate blueprint was found
+        """
         self.blueprint_name = blueprint_name
         self.locations = locations
 
-        message = f"Duplicate blueprint name '{blueprint_name}' found in multiple locations:"
+        message = (
+            f"Duplicate blueprint name '{blueprint_name}' found in multiple locations:"
+        )
         for loc in locations:
             message += f"\n  • {loc}"
 
@@ -222,7 +264,13 @@ class DuplicateBlueprintError(BlueprintError):
 class DuplicateDAGIdError(BlueprintError):
     """Error when duplicate DAG IDs are found across configurations."""
 
-    def __init__(self, dag_id: str, config_files: List[Path]):
+    def __init__(self, dag_id: str, config_files: list[Path]):
+        """Initialise a DuplicateDAGIdError with DAG ID and configuration file locations.
+
+        Args:
+            dag_id: The DAG ID that appears in multiple configuration files
+            config_files: List of configuration file paths where the duplicate DAG ID was found
+        """
         self.dag_id = dag_id
         self.config_files = config_files
 
@@ -233,12 +281,16 @@ class DuplicateDAGIdError(BlueprintError):
         message += "\n\n💡 Suggestions:"
         message += "\n  • Change the 'job_id' field in one of the configuration files"
         message += "\n  • Use unique DAG IDs for each configuration"
-        message += "\n  • Consider using a naming convention like '<team>-<service>-<purpose>'"
+        message += (
+            "\n  • Consider using a naming convention like '<team>-<service>-<purpose>'"
+        )
 
         super().__init__(message)
 
 
-def suggest_valid_values(invalid_value: str, valid_values: List[str], field_name: str) -> List[str]:
+def suggest_valid_values(
+    invalid_value: str, valid_values: list[str], field_name: str
+) -> list[str]:
     """Generate suggestions for invalid values.
 
     Args:
@@ -274,6 +326,8 @@ def suggest_valid_values(invalid_value: str, valid_values: List[str], field_name
 
     # Show all valid values if not too many
     if len(valid_values) <= MAX_SUGGESTION_VALUES:
-        suggestions.append(f"Valid values for {field_name}: {', '.join(sorted(valid_values))}")
+        suggestions.append(
+            f"Valid values for {field_name}: {', '.join(sorted(valid_values))}"
+        )
 
     return suggestions

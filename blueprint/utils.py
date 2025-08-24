@@ -1,21 +1,12 @@
 """Common utilities used across blueprint modules."""
 
 import os
-import sys
+import tomllib
 from pathlib import Path
-from typing import Any, Dict, Optional
-
-# Handle different Python versions for tomllib
-if sys.version_info >= (3, 11):
-    import tomllib
-else:
-    try:
-        import tomli as tomllib  # type: ignore[import-not-found]
-    except ImportError:
-        tomllib = None
+from typing import Any
 
 
-def load_config() -> Dict[str, Any]:
+def load_config() -> dict[str, Any]:
     """Load config from blueprint.toml if it exists."""
     for filename in ["blueprint.toml", ".blueprint.toml"]:
         config_path = Path(filename)
@@ -28,7 +19,7 @@ def load_config() -> Dict[str, Any]:
     return {}
 
 
-def get_template_path(cli_value: Optional[str] = None) -> str:
+def get_template_path(cli_value: str | None = None) -> str:
     """Get template path with precedence: CLI > env > config > default."""
     if cli_value:
         return cli_value
@@ -45,7 +36,7 @@ def get_template_path(cli_value: Optional[str] = None) -> str:
     return str(Path(airflow_home) / ".astro/templates")
 
 
-def get_output_dir(cli_value: Optional[str] = None) -> str:
+def get_output_dir(cli_value: str | None = None) -> str:
     """Get output dir with precedence: CLI > config > default."""
     if cli_value:
         return cli_value

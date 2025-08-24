@@ -29,17 +29,17 @@ with dag:
         bash_command='echo "Extracting from {{ source_table }}..."',
     )
 {% endfor %}
-    
+
     combine_task = BashOperator(
         task_id="combine_sources",
         bash_command='echo "Combining all source data..."',
     )
-    
+
     load_task = BashOperator(
         task_id="load_combined_data",
         bash_command='echo "Loading into {{ config.target_table }}..."',
     )
-    
+
     # Task dependencies
 {% if config.parallel %}
     # Parallel processing: all extract tasks feed into combine

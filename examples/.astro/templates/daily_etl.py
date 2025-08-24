@@ -36,7 +36,7 @@ class DailyETLConfig(BaseModel):
 
 class DailyETL(Blueprint[DailyETLConfig]):
     """Daily ETL job that moves data between tables with configurable scheduling.
-    
+
     This blueprint uses a Jinja2 template (daily_etl.j2) to generate DAGs,
     following DRY principles with a single source of truth for the DAG structure.
     """

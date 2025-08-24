@@ -87,7 +87,8 @@ class TestBlueprintNotFoundError:
     def test_with_available_blueprints(self):
         """Test error with available blueprints."""
         error = BlueprintNotFoundError(
-            "daily_etl", available_blueprints=["hourly_etl", "weekly_etl", "daily_export"]
+            "daily_etl",
+            available_blueprints=["hourly_etl", "weekly_etl", "daily_export"],
         )
         message = str(error)
 
@@ -111,7 +112,6 @@ class TestYAMLParseError:
 
     def test_from_yaml_error(self, tmp_path):
         """Test creating from a yaml.YAMLError."""
-
         # Create invalid YAML
         yaml_content = """
 blueprint: test
