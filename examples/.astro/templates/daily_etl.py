@@ -35,51 +35,9 @@ class DailyETLConfig(BaseModel):
 
 
 class DailyETL(Blueprint[DailyETLConfig]):
-    """Daily ETL job that moves data between tables with configurable scheduling."""
-
-    def render(self, config: DailyETLConfig):
-        from airflow import DAG
-        from airflow.operators.bash import BashOperator
-        from airflow.operators.python import PythonOperator
-
-        default_args = {
-            "owner": "data-team",
-            "retries": config.retries,
-            "retry_delay": timedelta(minutes=5),
-            "email_on_failure": False,
-        }
-        dag = DAG(
-            dag_id=config.job_id,
-            default_args=default_args,
-            description=f"ETL from {config.source_table} to {config.target_table}",
-            schedule=config.schedule,
-            start_date=datetime(2024, 1, 1, tzinfo=timezone.utc),
-            catchup=False,
-            tags=["etl", "blueprint"],
-        )
-        with dag:
-            check_source = BashOperator(
-                task_id="check_source_data",
-                bash_command=f'echo "Checking if {config.source_table} has data..."',
-            )
-
-            def extract_transform(**_):
-                print(f"Extracting data from {config.source_table}")
-                print("Applying transformations...")
-                print(f"Preparing to load into {config.target_table}")
-                return {"records_processed": 1000}
-
-            etl_task = PythonOperator(
-                task_id="extract_transform",
-                python_callable=extract_transform,
-            )
-            load_data = BashOperator(
-                task_id="load_data",
-                bash_command=f'echo "Loading data into {config.target_table}..."',
-            )
-            quality_check = BashOperator(
-                task_id="data_quality_check",
-                bash_command=f'echo "Running quality checks on {config.target_table}..."',
-            )
-            check_source >> etl_task >> load_data >> quality_check
-        return dag
+    """Daily ETL job that moves data between tables with configurable scheduling.
+    
+    This blueprint uses a Jinja2 template (daily_etl.j2) to generate DAGs,
+    following DRY principles with a single source of truth for the DAG structure.
+    """
+    pass

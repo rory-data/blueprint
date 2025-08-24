@@ -1,0 +1,58 @@
+"""
+Multi-Source ETL DAG: {{ config.job_id }}
+Generated from Blueprint template
+
+Sources: {{ config.source_tables | join(', ') }}
+Target: {{ config.target_table }}
+Schedule: {{ config.schedule }}
+Parallel: {{ config.parallel }}
+"""
+
+from datetime import datetime, timezone
+from airflow import DAG
+from airflow.operators.bash import BashOperator
+
+dag = DAG(
+    dag_id="{{ config.job_id }}",
+    description="Combine {{ config.source_tables | length }} sources into {{ config.target_table }}",
+    schedule="{{ config.schedule }}",
+    start_date=datetime(2024, 1, 1, tzinfo=timezone.utc),
+    catchup=False,
+    tags=["etl", "blueprint", "multi-source"],
+)
+
+with dag:
+    # Extract tasks for each source
+{% for source_table in config.source_tables %}
+    extract_{{ source_table.replace('.', '_') }} = BashOperator(
+        task_id="extract_{{ source_table.replace('.', '_') }}",
+        bash_command='echo "Extracting from {{ source_table }}..."',
+    )
+{% endfor %}
+    
+    combine_task = BashOperator(
+        task_id="combine_sources",
+        bash_command='echo "Combining all source data..."',
+    )
+    
+    load_task = BashOperator(
+        task_id="load_combined_data",
+        bash_command='echo "Loading into {{ config.target_table }}..."',
+    )
+    
+    # Task dependencies
+{% if config.parallel %}
+    # Parallel processing: all extract tasks feed into combine
+{% for source_table in config.source_tables %}
+    extract_{{ source_table.replace('.', '_') }} >> combine_task
+{% endfor %}
+    combine_task >> load_task
+{% else %}
+    # Sequential processing: extract tasks in series
+{% for i in range(config.source_tables | length - 1) %}
+    extract_{{ config.source_tables[i].replace('.', '_') }} >> extract_{{ config.source_tables[i + 1].replace('.', '_') }}
+{% endfor %}
+{% if config.source_tables %}
+    extract_{{ config.source_tables[-1].replace('.', '_') }} >> combine_task >> load_task
+{% endif %}
+{% endif %}
