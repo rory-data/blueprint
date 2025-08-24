@@ -60,27 +60,39 @@ class TestWriteDAGFile:
             assert '"retries": 3' in content  # Should be in default_args
             assert "start_date=datetime(2024, 1, 1, tzinfo=timezone.utc)" in content
 
-    def test_template_name_conversion(self):
-        """Test template name conversion from class names."""
+    def test_dag_writer_integration(self):
+        """Test that DAGWriter integration works properly."""
         
-        class DailyETL(Blueprint):
-            pass
+        class SimpleConfig(BaseModel):
+            job_id: str
+            schedule: str = "@daily"
+            
+        class SimpleBlueprint(Blueprint[SimpleConfig]):
+            def render(self, config: SimpleConfig):
+                from airflow import DAG
+                from datetime import datetime, timezone
+                return DAG(
+                    dag_id=config.job_id,
+                    schedule=config.schedule,
+                    start_date=datetime(2024, 1, 1, tzinfo=timezone.utc),
+                    catchup=False,
+                    description="Test DAG for DAGWriter integration"
+                )
         
-        class MultiSourceETL(Blueprint):
-            pass
+        # Test that the DAGWriter is used internally
+        blueprint = SimpleBlueprint()
+        config = SimpleConfig(job_id="integration_test", schedule="@hourly")
         
-        class SimpleBlueprint(Blueprint):
-            pass
-        
-        # Test template name generation
-        daily_etl = DailyETL()
-        assert daily_etl._get_template_name() == "daily_etl"
-        
-        multi_source = MultiSourceETL()
-        assert multi_source._get_template_name() == "multi_source_etl"
-        
-        simple = SimpleBlueprint()
-        assert simple._get_template_name() == "simple_blueprint"
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_file = Path(temp_dir) / "integration_test.py"
+            result_path = blueprint.write_dag_file(config, "integration_test", str(output_file))
+            
+            content = Path(result_path).read_text()
+            
+            # Verify the DAG was rendered properly
+            assert 'dag_id="integration_test"' in content
+            assert 'schedule="@hourly"' in content
+            assert 'description="Test DAG for DAGWriter integration"' in content
 
     def test_code_generation_with_different_types(self):
         """Test code generation with different parameter types."""
