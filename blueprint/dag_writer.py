@@ -2,37 +2,41 @@
 
 import inspect
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 if TYPE_CHECKING:
     from airflow import DAG
     from airflow.models import BaseOperator
 
+try:
+    from airflow.serialization.serialized_objects import SerializedDAG, SerializedBaseOperator, BaseSerialization
+    AIRFLOW_SERIALIZATION_AVAILABLE = True
+except ImportError:
+    AIRFLOW_SERIALIZATION_AVAILABLE = False
+
 
 class DAGWriter:
     """Generates standalone DAG files from rendered Airflow DAGs.
     
-    This class handles the conversion of a rendered DAG object into complete Python code
-    that can be deployed independently without requiring blueprint templates.
+    This class uses Airflow's built-in serialization capabilities to extract DAG information
+    and generate complete Python code that can be deployed independently without requiring 
+    blueprint templates.
     
     Features:
-    - Extracts and generates all necessary imports
-    - Creates complete DAG definitions with all parameters
-    - Generates task definitions with full configuration
-    - Handles function definitions for PythonOperator tasks
-    - Recreates task dependencies
+    - Uses Airflow's SerializedDAG for structured data extraction
+    - Leverages BaseSerialization for proper value formatting
+    - Generic operator parameter extraction using serialized data
+    - Automatic import detection from serialized task metadata
+    - Clean dependency recreation from DAG structure
     """
 
     def __init__(self):
         """Initialize the DAGWriter."""
-        self._operator_handlers: Dict[str, Callable] = {
-            "BashOperator": self._handle_bash_operator,
-            "PythonOperator": self._handle_python_operator,
-            "SQLOperator": self._handle_sql_operator,
-            "SqliteOperator": self._handle_sql_operator,
-            "PostgresOperator": self._handle_sql_operator,
-            "MySqlOperator": self._handle_sql_operator,
-        }
+        if not AIRFLOW_SERIALIZATION_AVAILABLE:
+            raise ImportError(
+                "Airflow serialization modules not available. "
+                "Please ensure Apache Airflow is installed."
+            )
 
     def write_dag_to_file(self, dag: "DAG", output_path: Path) -> None:
         """Write a rendered DAG to a Python file.
@@ -47,12 +51,16 @@ class DAGWriter:
         output_path.write_text(dag_code)
 
     def _generate_dag_code(self, dag: "DAG") -> str:
-        """Generate the complete Python code for the DAG file."""
-        # Generate all code sections
-        imports = self._extract_imports(dag)
-        dag_definition = self._generate_dag_definition(dag)
-        task_definitions = self._generate_task_definitions(dag)
-        dependencies = self._generate_dependencies(dag)
+        """Generate the complete Python code for the DAG file using Airflow serialization."""
+        # Serialize the DAG to get structured data
+        serialized_data = SerializedDAG.to_dict(dag)
+        dag_data = serialized_data["dag"]
+        
+        # Generate all code sections using serialized data
+        imports = self._extract_imports_from_serialized(dag_data)
+        dag_definition = self._generate_dag_definition_from_serialized(dag_data)
+        task_definitions = self._generate_task_definitions_from_serialized(dag, dag_data)
+        dependencies = self._generate_dependencies_from_serialized(dag_data)
         
         # Combine into final code
         code_sections = [
@@ -70,58 +78,83 @@ class DAGWriter:
         
         return "\n".join(code_sections)
 
-    def _extract_imports(self, dag: "DAG") -> str:
-        """Extract necessary imports for the DAG and its tasks."""
+    def _extract_imports_from_serialized(self, dag_data: Dict[str, Any]) -> str:
+        """Extract necessary imports using serialized DAG data."""
         imports = set()
         
         # Always include these basic imports
         imports.add("from datetime import datetime, timedelta, timezone")
         imports.add("from airflow import DAG")
         
-        # Extract imports based on task types
-        for task in dag.tasks:
-            task_module = task.__class__.__module__
-            task_class = task.__class__.__name__
-            imports.add(f"from {task_module} import {task_class}")
+        # Extract imports from serialized task data
+        if "tasks" in dag_data and isinstance(dag_data["tasks"], list):
+            for task_data_wrapped in dag_data["tasks"]:
+                # Deserialize the task data
+                task_obj = BaseSerialization.deserialize(task_data_wrapped)
+                # Get the task type and module from the serialized operator
+                if hasattr(task_obj, '__class__'):
+                    # Use the actual operator class info
+                    task_module = task_obj.__class__.__module__.replace('.serialized_objects', '')
+                    task_type = task_obj.__class__.__name__.replace('Serialized', '')
+                    
+                    # For SerializedBaseOperator, get the original operator info
+                    if hasattr(task_obj, '_task_type') and hasattr(task_obj, '_task_module'):
+                        task_type = getattr(task_obj, '_task_type', task_type)
+                        task_module = getattr(task_obj, '_task_module', task_module)
+                    
+                    if task_module and task_type:
+                        imports.add(f"from {task_module} import {task_type}")
         
         return "\n".join(sorted(imports))
 
-    def _generate_dag_definition(self, dag: "DAG") -> str:
-        """Generate the complete DAG constructor code."""
+    def _generate_dag_definition_from_serialized(self, dag_data: Dict[str, Any]) -> str:
+        """Generate DAG constructor using serialized data."""
         params = []
         
-        # Basic DAG parameters
-        params.append(f'    dag_id="{dag.dag_id}",')
+        # Basic DAG parameters from serialized data
+        if "_dag_id" in dag_data:
+            params.append(f'    dag_id="{dag_data["_dag_id"]}",')
         
-        # Handle default_args
-        if hasattr(dag, 'default_args') and dag.default_args:
-            default_args_code = self._format_default_args(dag.default_args)
+        # Handle default_args using BaseSerialization
+        if "default_args" in dag_data and dag_data["default_args"]:
+            default_args = BaseSerialization.deserialize(dag_data["default_args"])
+            default_args_code = self._format_default_args(default_args)
             params.append(f"    default_args={default_args_code},")
         
         # Other DAG parameters
-        if hasattr(dag, 'description') and dag.description:
-            params.append(f'    description="{dag.description}",')
+        if "_description" in dag_data and dag_data["_description"]:
+            params.append(f'    description="{dag_data["_description"]}",')
         
-        # Handle schedule (both old and new style)
-        schedule = self._get_dag_schedule(dag)
-        if schedule is not None:
+        # Handle schedule
+        if "schedule_interval" in dag_data and dag_data["schedule_interval"]:
+            schedule = dag_data["schedule_interval"]
             if isinstance(schedule, str):
                 params.append(f'    schedule="{schedule}",')
             else:
                 params.append(f'    schedule={repr(schedule)},')
         
         # Start date
-        if hasattr(dag, 'start_date') and dag.start_date:
-            start_date_code = self._format_datetime(dag.start_date)
+        if "start_date" in dag_data and dag_data["start_date"]:
+            start_date_raw = dag_data["start_date"] 
+            # Handle both timestamp floats and datetime objects
+            if isinstance(start_date_raw, (int, float)):
+                # Convert timestamp to datetime - assume UTC for serialized timestamps
+                from datetime import datetime as dt, timezone
+                start_date = dt.fromtimestamp(start_date_raw, timezone.utc)
+            else:
+                # Try to deserialize if it's a complex object
+                start_date = BaseSerialization.deserialize(start_date_raw)
+            
+            start_date_code = self._format_datetime(start_date)
             params.append(f'    start_date={start_date_code},')
         
-        # Other boolean/simple parameters
-        if hasattr(dag, 'catchup'):
-            params.append(f'    catchup={dag.catchup},')
+        # Catchup
+        if "catchup" in dag_data:
+            params.append(f'    catchup={dag_data["catchup"]},')
         
         # Tags
-        if hasattr(dag, 'tags') and dag.tags:
-            tags_str = "[" + ", ".join(f'"{tag}"' for tag in dag.tags) + "]"
+        if "tags" in dag_data and dag_data["tags"]:
+            tags_str = "[" + ", ".join(f'"{tag}"' for tag in dag_data["tags"]) + "]"
             params.append(f'    tags={tags_str},')
         
         params_code = "\n".join(params)
@@ -154,124 +187,14 @@ class DAGWriter:
         else:
             return repr(value)
 
-    def _get_dag_schedule(self, dag: "DAG") -> Any:
-        """Get the schedule from a DAG, handling both old and new Airflow versions."""
-        # Try new style first (Airflow 2.4+)
-        if hasattr(dag, 'schedule') and dag.schedule is not None:
-            return dag.schedule
-        # Fall back to old style
-        elif hasattr(dag, 'schedule_interval') and dag.schedule_interval is not None:
-            return dag.schedule_interval
-        return None
-
     def _format_datetime(self, dt) -> str:
         """Format a datetime object as Python code."""
-        if dt.tzinfo:
+        if hasattr(dt, 'tzinfo') and dt.tzinfo:
             return f"datetime({dt.year}, {dt.month}, {dt.day}, tzinfo=timezone.utc)"
         else:
             return f"datetime({dt.year}, {dt.month}, {dt.day})"
 
-    def _generate_task_definitions(self, dag: "DAG") -> str:
-        """Generate all task definitions."""
-        task_definitions = []
-        
-        for task in dag.tasks:
-            task_def = self._generate_single_task_definition(task)
-            if task_def:
-                task_definitions.append(task_def)
-        
-        return "\n\n".join(task_definitions)
-
-    def _generate_single_task_definition(self, task: "BaseOperator") -> str:
-        """Generate the definition for a single task."""
-        task_class = task.__class__.__name__
-        
-        # Use specific handler if available
-        if task_class in self._operator_handlers:
-            return self._operator_handlers[task_class](task)
-        
-        # Fall back to generic handler
-        return self._handle_generic_operator(task)
-
-    def _handle_bash_operator(self, task: "BaseOperator") -> str:
-        """Handle BashOperator tasks."""
-        params = self._get_base_task_params(task)
-        
-        if hasattr(task, 'bash_command') and task.bash_command:
-            bash_cmd = task.bash_command.replace('"', '\\"')
-            params.append(f'    bash_command="{bash_cmd}",')
-        
-        return self._format_task_definition(task, params)
-
-    def _handle_python_operator(self, task: "BaseOperator") -> str:
-        """Handle PythonOperator tasks."""
-        params = self._get_base_task_params(task)
-        
-        if hasattr(task, 'python_callable') and task.python_callable:
-            func_name = task.python_callable.__name__
-            params.append(f'    python_callable={func_name},')
-            
-            # Include function definition
-            func_def = self._extract_function_definition(task.python_callable)
-            task_def = self._format_task_definition(task, params)
-            
-            return f"{func_def}\n\n{task_def}"
-        
-        return self._format_task_definition(task, params)
-
-    def _handle_sql_operator(self, task: "BaseOperator") -> str:
-        """Handle SQL operator tasks."""
-        params = self._get_base_task_params(task)
-        
-        if hasattr(task, 'sql') and task.sql:
-            sql_cmd = task.sql.replace('"', '\\"')
-            params.append(f'    sql="{sql_cmd}",')
-        
-        # Add connection_id if present
-        if hasattr(task, 'conn_id') and task.conn_id:
-            params.append(f'    conn_id="{task.conn_id}",')
-        elif hasattr(task, 'connection_id') and task.connection_id:
-            params.append(f'    connection_id="{task.connection_id}",')
-        
-        return self._format_task_definition(task, params)
-
-    def _handle_generic_operator(self, task: "BaseOperator") -> str:
-        """Handle generic operators by extracting common parameters."""
-        params = self._get_base_task_params(task)
-        
-        # Try to extract some common operator parameters
-        common_params = [
-            'sql', 'bash_command', 'command', 'target', 'source',
-            'conn_id', 'connection_id', 'database', 'schema'
-        ]
-        
-        for param in common_params:
-            if hasattr(task, param):
-                value = getattr(task, param)
-                if value is not None:
-                    if isinstance(value, str):
-                        escaped_value = value.replace('"', '\\"')
-                        params.append(f'    {param}="{escaped_value}",')
-                    else:
-                        params.append(f'    {param}={repr(value)},')
-        
-        return self._format_task_definition(task, params)
-
-    def _get_base_task_params(self, task: "BaseOperator") -> List[str]:
-        """Get base parameters common to all tasks."""
-        return [
-            f'    task_id="{task.task_id}",',
-            '    dag=dag,',
-        ]
-
-    def _format_task_definition(self, task: "BaseOperator", params: List[str]) -> str:
-        """Format a task definition with the given parameters."""
-        task_class = task.__class__.__name__
-        params_str = "\n".join(params)
-        
-        return f"{task.task_id} = {task_class}(\n{params_str}\n)"
-
-    def _extract_function_definition(self, func: Callable) -> str:
+    def _extract_function_definition(self, func) -> str:
         """Extract function definition from a callable."""
         try:
             # Get the source code of the function
@@ -298,18 +221,172 @@ class DAGWriter:
     """Auto-generated function placeholder."""
     pass'''
 
-    def _generate_dependencies(self, dag: "DAG") -> str:
-        """Generate task dependency definitions."""
+    def _generate_task_definitions_from_serialized(self, dag: "DAG", dag_data: Dict[str, Any]) -> str:
+        """Generate task definitions using serialized data and original DAG for function extraction."""
+        task_definitions = []
+        
+        if "tasks" in dag_data and isinstance(dag_data["tasks"], list):
+            for task_data_wrapped in dag_data["tasks"]:
+                # Deserialize the task data to get SerializedBaseOperator
+                task_obj = BaseSerialization.deserialize(task_data_wrapped)
+                
+                # Get the original task for function extraction if needed
+                task_id = getattr(task_obj, 'task_id', None)
+                original_task = next((t for t in dag.tasks if t.task_id == task_id), None)
+                
+                # Convert SerializedBaseOperator to dict format for processing
+                task_data = self._serialize_task_to_dict(task_obj, original_task)
+                task_def = self._generate_single_task_from_serialized(task_data, original_task)
+                if task_def:
+                    task_definitions.append(task_def)
+        
+        return "\n\n".join(task_definitions)
+
+    def _serialize_task_to_dict(self, task_obj, original_task: Optional["BaseOperator"] = None) -> Dict[str, Any]:
+        """Convert SerializedBaseOperator to dict format for processing."""
+        if original_task:
+            # Use SerializedBaseOperator.serialize_operator for complete data
+            from airflow.serialization.serialized_objects import SerializedBaseOperator
+            return SerializedBaseOperator.serialize_operator(original_task)
+        else:
+            # Fallback: extract what we can from SerializedBaseOperator
+            return {
+                'task_id': getattr(task_obj, 'task_id', ''),
+                '_task_type': getattr(task_obj, '_task_type', task_obj.__class__.__name__.replace('Serialized', '')),
+                '_task_module': getattr(task_obj, '_task_module', task_obj.__class__.__module__.replace('.serialized_objects', '')),
+                'bash_command': getattr(task_obj, 'bash_command', None),
+                'python_callable': getattr(task_obj, 'python_callable', None),
+            }
+
+    def _generate_single_task_from_serialized(self, task_data: Dict[str, Any], original_task: Optional["BaseOperator"] = None) -> str:
+        """Generate a single task definition from serialized data."""
+        task_type = task_data.get("_task_type")
+        task_id = task_data.get("task_id")
+        
+        if not task_type or not task_id:
+            return ""
+        
+        # Start with base parameters
+        params = [
+            f'    task_id="{task_id}",',
+            '    dag=dag,',
+        ]
+        
+        # Add operator-specific parameters from serialized data
+        self._add_operator_params_from_serialized(params, task_data, task_type, original_task)
+        
+        # Format the task definition
+        params_str = "\n".join(params)
+        task_definition = f"{task_id} = {task_type}(\n{params_str}\n)"
+        
+        # Handle PythonOperator function definitions
+        if task_type == "PythonOperator" and original_task and hasattr(original_task, 'python_callable'):
+            func_def = self._extract_function_definition(original_task.python_callable)
+            return f"{func_def}\n\n{task_definition}"
+        
+        return task_definition
+
+    def _add_operator_params_from_serialized(self, params: List[str], task_data: Dict[str, Any], 
+                                           task_type: str, original_task: Optional["BaseOperator"] = None) -> None:
+        """Add operator-specific parameters from serialized data."""
+        # Common parameters to skip (internals and already handled)
+        skip_params = {
+            '_task_type', '_task_module', '_is_empty', '_log_config_logger_name',
+            'task_id', 'downstream_task_ids', 'template_fields', 'template_ext',
+            'template_fields_renderers', 'ui_color', 'ui_fgcolor', 'weight_rule',
+            'is_setup', 'is_teardown', 'on_failure_fail_dagrun', 'pool',
+            'start_from_trigger', 'start_trigger_args', '_needs_expansion',
+            # Skip parameters that are duplicates of DAG default_args
+            'owner', 'retries', 'retry_delay'
+        }
+        
+        # Handle PythonOperator specially
+        if task_type == "PythonOperator" and original_task and hasattr(original_task, 'python_callable'):
+            func_name = original_task.python_callable.__name__
+            params.append(f'    python_callable={func_name},')
+        
+        for key, value in task_data.items():
+            if key not in skip_params and value is not None:
+                # Handle special cases for different operators
+                formatted_value = self._format_serialized_value(value, key, task_type)
+                if formatted_value is not None:
+                    params.append(f'    {key}={formatted_value},')
+
+    def _format_serialized_value(self, value: Any, key: str, task_type: str) -> Optional[str]:
+        """Format a serialized value for Python code generation."""
+        # Skip empty lists and empty tuples for op_args/op_kwargs
+        if key in ('op_args', 'op_kwargs') and not value:
+            return None
+            
+        if isinstance(value, str):
+            # Escape quotes in string values - prefer double quotes to avoid excessive escaping
+            if '"' in value and "'" not in value:
+                # Use single quotes if string contains double quotes but no single quotes
+                return f"'{value}'"
+            else:
+                # Use double quotes and escape any internal double quotes
+                escaped_value = value.replace('"', '\\"')
+                return f'"{escaped_value}"'
+        elif isinstance(value, bool):
+            return str(value)
+        elif isinstance(value, (int, float)):
+            return str(value)
+        elif isinstance(value, list):
+            if all(isinstance(item, str) for item in value):
+                return "[" + ", ".join(f'"{item}"' for item in value) + "]"
+            else:
+                return repr(value)
+        elif isinstance(value, dict):
+            # For dict values, try to format them nicely
+            if key == "op_kwargs" or key == "op_args":
+                return self._format_dict_value(value)
+        
+        # For other types, use repr as fallback
+        return repr(value)
+
+    def _format_dict_value(self, value: Dict[str, Any]) -> str:
+        """Format a dictionary value for code generation."""
+        if not value:
+            return "{}"
+        
+        lines = ["{"]
+        for k, v in value.items():
+            formatted_v = self._format_value(v)  # Reuse existing method
+            lines.append(f'        "{k}": {formatted_v},')
+        lines.append("    }")
+        return "\n    ".join(lines)
+
+    def _generate_dependencies_from_serialized(self, dag_data: Dict[str, Any]) -> str:
+        """Generate task dependencies using serialized data."""
         dependencies = []
         processed = set()
         
-        # Generate dependencies from downstream relationships
-        for task in dag.tasks:
-            if hasattr(task, 'downstream_task_ids') and task.downstream_task_ids:
-                for downstream_id in task.downstream_task_ids:
-                    dep_str = f"{task.task_id} >> {downstream_id}"
-                    if dep_str not in processed:
-                        dependencies.append(dep_str)
-                        processed.add(dep_str)
+        # Extract dependencies from task downstream relationships
+        if "tasks" in dag_data and isinstance(dag_data["tasks"], list):
+            for task_data_wrapped in dag_data["tasks"]:
+                # Deserialize the task data
+                task_obj = BaseSerialization.deserialize(task_data_wrapped)
+                
+                task_id = getattr(task_obj, 'task_id', None)
+                downstream_ids = getattr(task_obj, 'downstream_task_ids', [])
+                
+                if task_id and downstream_ids:
+                    for downstream_id in downstream_ids:
+                        dep_str = f"{task_id} >> {downstream_id}"
+                        if dep_str not in processed:
+                            dependencies.append(dep_str)
+                            processed.add(dep_str)
         
         return "\n".join(dependencies)
+
+    # Backward compatibility methods for tests
+    def _extract_imports(self, dag: "DAG") -> str:
+        """Backward compatibility method for tests."""
+        serialized_data = SerializedDAG.to_dict(dag)
+        return self._extract_imports_from_serialized(serialized_data["dag"])
+
+    def _handle_generic_operator(self, task: "BaseOperator") -> str:
+        """Backward compatibility method for tests."""
+        from airflow.serialization.serialized_objects import SerializedBaseOperator
+        task_data = SerializedBaseOperator.serialize_operator(task)
+        return self._generate_single_task_from_serialized(task_data, task)

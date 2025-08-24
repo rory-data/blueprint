@@ -31,6 +31,9 @@ class TestWriteDAGFile:
                     schedule=config.schedule,
                     start_date=datetime(2024, 1, 1, tzinfo=timezone.utc),
                     catchup=False,
+                    default_args={
+                        "retries": config.retries
+                    }
                 )
 
         # Create blueprint and config
