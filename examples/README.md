@@ -99,8 +99,8 @@ dag = MultiSourceETL.build(
 
 1. Create a new file in `templates/`
 2. Define your config model using Pydantic
-3. Create a Blueprint class that implements `render()`
-4. Use it in your DAGs!
+3. Create a Blueprint class that implements `render()` and optionally `render_template()`
+4. Use it for both runtime and build-time DAG generation!
 
 Example:
 
@@ -114,10 +114,56 @@ class MyConfig(BaseModel):
 
 class MyBlueprint(Blueprint[MyConfig]):
     def render(self, config: MyConfig) -> DAG:
+        """Runtime DAG generation."""
         return DAG(
             dag_id=config.job_id,
             schedule=config.schedule,
             # ... your DAG logic
+        )
+    
+    def render_template(self, config: MyConfig) -> str:
+        """Build-time template generation."""
+        return f'''
+from airflow import DAG
+from datetime import datetime
+
+dag = DAG(
+    dag_id="{config.job_id}",
+    schedule="{config.schedule}",
+    start_date=datetime(2024, 1, 1),
+)
+# ... your template logic
+'''
+
+# Runtime usage (existing functionality)
+dag = MyBlueprint.build(job_id="my-job", schedule="@hourly")
+
+# Build-time usage (new functionality)
+template_code = MyBlueprint.build_template(job_id="my-job", schedule="@hourly")
+```
+
+## Build vs Runtime Generation
+
+Blueprint now supports two modes of operation:
+
+### Runtime Generation (Default)
+- DAGs are created dynamically when Airflow loads them
+- Use `auto_load_yaml_dags()` in your DAG files
+- Flexible but requires Blueprint package in Airflow environment
+
+### Build-time Generation (New)
+- DAG files are pre-generated as Python code
+- Use `blueprint build` command to generate static DAG files
+- Self-contained DAG files that don't require Blueprint at runtime
+- Better for production deployments and CI/CD pipelines
+
+```bash
+# Generate DAG files from YAML configs
+blueprint build --config-dir configs --output-dir dags
+
+# Generate with custom template directory
+blueprint build --template-dir my-templates --output-dir generated-dags --force
+```
         )
 
 # Use it

@@ -83,3 +83,70 @@ class DailyETL(Blueprint[DailyETLConfig]):
             )
             check_source >> etl_task >> load_data >> quality_check
         return dag
+
+    def render_template(self, config: DailyETLConfig) -> str:
+        """Render the DAG as a Python code template for build-time generation."""
+        template = f'''"""
+Daily ETL DAG: {config.job_id}
+Generated from Blueprint template
+
+Source: {config.source_table}
+Target: {config.target_table}
+Schedule: {config.schedule}
+Retries: {config.retries}
+"""
+
+from datetime import datetime, timedelta, timezone
+from airflow import DAG
+from airflow.operators.bash import BashOperator
+from airflow.operators.python import PythonOperator
+
+# DAG configuration
+default_args = {{
+    "owner": "data-team",
+    "retries": {config.retries},
+    "retry_delay": timedelta(minutes=5),
+    "email_on_failure": False,
+}}
+
+dag = DAG(
+    dag_id="{config.job_id}",
+    default_args=default_args,
+    description="ETL from {config.source_table} to {config.target_table}",
+    schedule="{config.schedule}",
+    start_date=datetime(2024, 1, 1, tzinfo=timezone.utc),
+    catchup=False,
+    tags=["etl", "blueprint"],
+)
+
+# Task definitions
+def extract_transform(**context):
+    print("Extracting data from {config.source_table}")
+    print("Applying transformations...")
+    print("Preparing to load into {config.target_table}")
+    return {{"records_processed": 1000}}
+
+with dag:
+    check_source = BashOperator(
+        task_id="check_source_data",
+        bash_command='echo "Checking if {config.source_table} has data..."',
+    )
+
+    etl_task = PythonOperator(
+        task_id="extract_transform",
+        python_callable=extract_transform,
+    )
+    
+    load_data = BashOperator(
+        task_id="load_data",
+        bash_command='echo "Loading data into {config.target_table}..."',
+    )
+    
+    quality_check = BashOperator(
+        task_id="data_quality_check",
+        bash_command='echo "Running quality checks on {config.target_table}..."',
+    )
+    
+    check_source >> etl_task >> load_data >> quality_check
+'''
+        return template

@@ -563,6 +563,106 @@ def init(force: bool):
         console.print(f"  4. Ensure [cyan]{loader_path}[/cyan] is in your DAGs folder")
 
 
+@cli.command()
+@click.option("--config-dir", default=None, help="Directory containing YAML configuration files")
+@click.option("--output-dir", default=None, help="Directory to output generated DAG files")
+@click.option("--template-dir", default=None, help="Template directory path")
+@click.option("--pattern", default="*.dag.yaml", help="File pattern to match for configs")
+@click.option("--force", is_flag=True, help="Overwrite existing DAG files")
+def build(config_dir: Optional[str], output_dir: Optional[str], template_dir: Optional[str], 
+          pattern: str, force: bool):
+    """Build DAG files from YAML configurations.
+    
+    Generates Python DAG files from Blueprint templates and YAML configurations.
+    This allows you to pre-generate DAG files for deployment rather than using
+    runtime generation.
+    
+    Examples:
+        blueprint build                    # Build all configs in current dir to ./dags/
+        blueprint build --output-dir /tmp  # Build to specific output directory
+        blueprint build --config-dir configs --output-dir dags
+    """
+    from blueprint import load_blueprint
+    
+    # Set defaults
+    config_dir = config_dir or get_output_dir()
+    output_dir = output_dir or "dags"
+    template_dir = get_template_path(template_dir)
+    
+    config_dir_path = Path(config_dir)
+    output_dir_path = Path(output_dir)
+    
+    # Ensure output directory exists
+    output_dir_path.mkdir(parents=True, exist_ok=True)
+    
+    # Find configuration files
+    if not config_dir_path.exists():
+        console.print(f"[red]Configuration directory does not exist: {config_dir_path}[/red]")
+        sys.exit(1)
+    
+    config_files = list(config_dir_path.glob(pattern))
+    if not config_files:
+        console.print(f"[yellow]No configuration files found matching pattern '{pattern}' in {config_dir_path}[/yellow]")
+        return
+    
+    console.print(f"[blue]Building DAG files from {len(config_files)} configuration(s)...[/blue]")
+    console.print(f"  Input:  {config_dir_path}")
+    console.print(f"  Output: {output_dir_path}")
+    console.print(f"  Pattern: {pattern}")
+    
+    built_count = 0
+    failed_count = 0
+    
+    for config_file in config_files:
+        try:
+            # Load YAML configuration
+            with config_file.open() as f:
+                config_data = yaml.safe_load(f)
+            
+            blueprint_name = config_data.get('blueprint')
+            if not blueprint_name:
+                console.print(f"[red]❌ {config_file.name}: No 'blueprint' specified[/red]")
+                failed_count += 1
+                continue
+            
+            # Load blueprint class
+            blueprint_class = load_blueprint(blueprint_name, template_dir)
+            
+            # Extract config parameters (exclude 'blueprint' key)
+            config_params = {k: v for k, v in config_data.items() if k != 'blueprint'}
+            
+            # Generate template code
+            template_code = blueprint_class.build_template(**config_params)
+            
+            # Determine output file name
+            dag_name = config_file.stem.replace('.dag', '')
+            output_file = output_dir_path / f"{dag_name}.py"
+            
+            # Check if file exists and handle overwrite
+            if output_file.exists() and not force:
+                console.print(f"[yellow]⚠️  {config_file.name}: Output file {output_file.name} exists (use --force to overwrite)[/yellow]")
+                failed_count += 1
+                continue
+            
+            # Write the generated code
+            output_file.write_text(template_code)
+            console.print(f"[green]✅ {config_file.name} → {output_file.name}[/green]")
+            built_count += 1
+            
+        except Exception as e:
+            console.print(f"[red]❌ {config_file.name}: {e}[/red]")
+            failed_count += 1
+    
+    # Summary
+    console.print(f"\n[blue]Build completed:[/blue]")
+    console.print(f"  ✅ Built: {built_count}")
+    if failed_count > 0:
+        console.print(f"  ❌ Failed: {failed_count}")
+        sys.exit(1)
+    else:
+        console.print(f"  🎉 All DAG files generated successfully!")
+
+
 def main():
     """Main entry point for the CLI."""
     cli()
