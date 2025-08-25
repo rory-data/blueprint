@@ -16,7 +16,6 @@ from .errors import (
 )
 from .loaders import (
     discover_blueprints,
-    from_yaml,
     get_blueprint_info,
     load_blueprint,
 )
@@ -24,15 +23,17 @@ from .models import (
     Any,
     BaseModel,
     ConfigDict,
+    Dict,
     Field,
+    List,
+    Optional,
+    Union,
     ValidationError,
     field_validator,
     model_validator,
 )
 from .registry import registry
 from .template_loader import (
-    auto_load_yaml_dags,
-    discover_yaml_dags,
     load_template,
     setup_template_path,
 )
@@ -46,16 +47,17 @@ __all__ = [
     "BlueprintValidationError",
     "ConfigDict",
     "ConfigurationError",
+    "Dict",
     "DuplicateBlueprintError",
     "DuplicateDAGIdError",
     "Field",
+    "List",
+    "Optional",
+    "Union",
     "ValidationError",
     "YAMLParseError",
-    "auto_load_yaml_dags",
     "discover_blueprints",
-    "discover_yaml_dags",
     "field_validator",
-    "from_yaml",
     "get_blueprint_info",
     "load_blueprint",
     "load_template",
