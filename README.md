@@ -2,31 +2,34 @@
 
 **⚠️ NOTE: This is currently an alpha project and may change significantly.**
 
-Build reusable, validated Airflow DAG templates that anyone on your team can discover and use.
+Build reusable, validated Airflow DAG templates for **build-time generation** using Jinja2 templates.
 
 ## What is Blueprint?
 
-Blueprint helps data platform teams define reusable, parameterized DAG templates for Apache Airflow. These templates can be safely configured by other team members, like data analysts or less-experienced engineers, using simple YAML files.
+Blueprint helps data platform teams define reusable, parameterized DAG templates for Apache Airflow using ***.py.j2** Jinja2 templates. These templates are processed at **build time** to generate clean Python DAG files that can be linted, formatted, and version controlled.
 
 With Blueprint, you can:
 
-- ✅ Enforce **type-safe parameters** with validation
-- 🚫 Get **clear error messages** when configs are invalid
-- 🛠️ Use a **CLI** to validate configs before deployment
-- 🔍 Automatically **discover available templates** and **generate new DAGs** from them
+- ✅ Enforce **type-safe parameters** with Pydantic validation
+- 🚫 Get **clear error messages** when configs are invalid  
+- 🛠️ Use a **CLI** to generate and validate DAG files
+- 🔍 Automatically **discover available templates**
+- 🎨 **Auto-lint and format** generated DAGs with Ruff
+- 📦 **Build-time generation** - no runtime overhead or dependencies
 
 ## Why Blueprint?
 
 In most data teams, the same kind of DAG is built over and over with small variations. This usually means lots of copy-pasting and hard-to-maintain code. Blueprint solves this by letting you:
 
-- **Create once, use everywhere** – Write a DAG pattern once as a template
-- **Reduce errors** – Validate configurations before deployment
+- **Create once, use everywhere** – Write a DAG pattern once as a *.py.j2 template
+- **Build-time generation** – Generate clean Python files during CI/CD
+- **Reduce errors** – Validate configurations and lint generated code
 - **Build guardrails** – Enforce your standards and best practices
-- **Help non-engineers** – Let others safely define DAGs without touching Python
+- **Version control friendly** – Generated DAGs are regular Python files
 
 ## Example Workflow
 
-### 1. Create a Blueprint template
+### 1. Create a Blueprint template (*.py.j2)
 
 Save this in `.astro/templates/etl_blueprints.py`:
 
