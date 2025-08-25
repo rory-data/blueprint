@@ -3,6 +3,7 @@
 __version__ = "0.0.1a2"
 
 from .core import Blueprint
+from .dag_writer import DAGWriter
 from .errors import (
     BlueprintError,
     BlueprintNotFoundError,
@@ -50,6 +51,7 @@ __all__ = [
     "BlueprintValidationError",
     "ConfigDict",
     "ConfigurationError",
+    "DAGWriter",
     "Dict",
     "DuplicateBlueprintError",
     "DuplicateDAGIdError",

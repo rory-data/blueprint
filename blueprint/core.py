@@ -1,7 +1,8 @@
 """Core Blueprint base class with magic method generation."""
 
 import inspect
-from typing import TYPE_CHECKING, Any, Dict, Generic, Type, TypeVar
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Dict, Generic, Optional, Type, TypeVar
 
 from pydantic import BaseModel
 
@@ -137,3 +138,75 @@ class Blueprint(Generic[T]):
     def get_schema(cls) -> Dict[str, Any]:
         """Get the JSON Schema for this Blueprint's configuration."""
         return cls.get_config_type().model_json_schema()
+
+    def write_dag_file(self, config: T, dag_id: str, output_file: Optional[str] = None) -> str:
+        """Write the rendered DAG code to a .py file in the dags folder.
+
+        Args:
+            config: The validated configuration model instance
+            dag_id: The DAG ID to use in the generated file
+            output_file: Optional output file path. If not provided, uses dag_id.py in dags folder
+
+        Returns:
+            Path to the created file
+
+        Example:
+            ```python
+            class MyConfig(BaseModel):
+                job_id: str
+                schedule: str = "@daily"
+
+            blueprint = MyBlueprint()
+            config = MyConfig(job_id="my_job", schedule="@hourly")
+            file_path = blueprint.write_dag_file(config, "my_job")
+            print(f"DAG file written to: {file_path}")
+            ```
+        """
+        from .dag_writer import DAGWriter
+        from .utils import get_airflow_dags_folder
+
+        # Determine output file path
+        if output_file is None:
+            dags_folder = get_airflow_dags_folder()
+            output_file = str(dags_folder / f"{dag_id}.py")
+        
+        # Render the DAG and write to file
+        dag = self.render(config)
+        
+        writer = DAGWriter()
+        output_path = Path(output_file)
+        writer.write_dag_to_file(dag, output_path)
+        
+        return str(output_path)
+
+    @classmethod
+    def write_dag_file_from_config(
+        cls, dag_id: str, output_file: Optional[str] = None, **kwargs: Any
+    ) -> str:
+        """Class method to write DAG file directly from configuration parameters.
+
+        Args:
+            dag_id: The DAG ID to use in the generated file
+            output_file: Optional output file path. If not provided, uses dag_id.py in dags folder
+            **kwargs: Configuration parameters for the blueprint
+
+        Returns:
+            Path to the created file
+
+        Example:
+            ```python
+            file_path = MyBlueprint.write_dag_file_from_config(
+                dag_id="my_job",
+                job_id="my_job",
+                schedule="@hourly",
+                retries=3
+            )
+            print(f"DAG file written to: {file_path}")
+            ```
+        """
+        # Create the config instance - Pydantic handles validation
+        config = cls._config_type(**kwargs)
+        
+        # Create blueprint instance and call instance method
+        instance = cls()
+        return instance.write_dag_file(config, dag_id, output_file)
