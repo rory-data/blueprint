@@ -111,7 +111,7 @@ docstring-code-line-length = "dynamic"
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401"] # unused import in __init__ files
-"**/{tests,docs,tools}/*" = ["S101", "ANN", "S603"] # assert usage and type annotations in tests
+"**/{tests,docs,tools}/**" = ["S101", "ANN", "S603"] # assert usage and type annotations in tests
 "conftest.py" = [
     "S101",
     "ANN",

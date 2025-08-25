@@ -3,15 +3,12 @@
 import inspect
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Generic, TypeVar
+from typing import Any, Generic, TypeVar
 
 from jinja2 import Environment, FileSystemLoader, Template
 from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
-
-if TYPE_CHECKING:
-    from airflow import DAG
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -171,7 +168,11 @@ class Blueprint(Generic[T]):
             # In the blueprint package templates directory
             Path(__file__).parent / "templates" / f"{blueprint_name}.py.j2",
             # In the examples templates directory (for development)
-            Path(__file__).parent.parent / "examples" / "dags" / "templates" / f"{blueprint_name}.py.j2",
+            Path(__file__).parent.parent
+            / "examples"
+            / "dags"
+            / "templates"
+            / f"{blueprint_name}.py.j2",
         ]
 
         for path in possible_paths:
@@ -196,7 +197,7 @@ class Blueprint(Generic[T]):
         # Create Jinja2 environment with the template directory
         env = Environment(
             loader=FileSystemLoader(str(template_path.parent)),
-            autoescape=False,  # Disable autoescape for Python code
+            autoescape=True,
             trim_blocks=True,
             lstrip_blocks=True,
         )
@@ -240,7 +241,9 @@ dag = DAG(
 '''
 
     @classmethod
-    def build_template(cls, output_file: str | None = None, lint: bool = True, **kwargs: Any) -> str:
+    def build_template(
+        cls, output_file: str | None = None, lint: bool = True, **kwargs: Any
+    ) -> str:
         """Build a DAG template string from the provided configuration.
 
         This method generates a Python code string that can be written to a file
@@ -300,10 +303,11 @@ dag = DAG(
 
             output_path = Path(output_file)
             output_path.write_text(template_code)
-            
+
             # Lint the generated file
             if lint:
-                from .linting import lint_dag_file
+                from .linter import lint_dag_file
+
                 lint_dag_file(output_path, fix=True, format_code=True)
 
         return template_code

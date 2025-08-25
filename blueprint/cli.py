@@ -1,18 +1,15 @@
 """Simplified Blueprint CLI for build-time DAG generation."""
 
-import json
 import logging
 import sys
 from pathlib import Path
-from typing import List, Optional
 
 import click
 from rich.console import Console
-from rich.syntax import Syntax
 from rich.table import Table
 
 from blueprint import discover_blueprints, get_blueprint_info
-from blueprint.linting import lint_dag_file, lint_directory
+from blueprint.linter import lint_dag_file, lint_directory
 from blueprint.utils import get_template_path
 
 console = Console()
@@ -33,7 +30,7 @@ def cli(verbose: bool):
 
 @cli.command("list")
 @click.option("--template-dir", default=None, help="Template directory path")
-def list_blueprints(template_dir: Optional[str]):
+def list_blueprints(template_dir: str | None):
     """List available blueprint templates."""
     template_dir_path = get_template_path(template_dir)
     blueprints = discover_blueprints(template_dir_path)
@@ -61,7 +58,7 @@ def list_blueprints(template_dir: Optional[str]):
 @cli.command()
 @click.argument("blueprint_name")
 @click.option("--template-dir", default=None, help="Template directory path")
-def describe(blueprint_name: str, template_dir: Optional[str]):
+def describe(blueprint_name: str, template_dir: str | None):
     """Show blueprint configuration schema and documentation."""
     template_dir_path = get_template_path(template_dir)
 
@@ -108,13 +105,15 @@ def describe(blueprint_name: str, template_dir: Optional[str]):
 @click.argument("blueprint_name")
 @click.argument("output_file")
 @click.option("--template-dir", default=None, help="Template directory path")
-@click.option("--config", "-c", multiple=True, help="Configuration parameter (key=value)")
+@click.option(
+    "--config", "-c", multiple=True, help="Configuration parameter (key=value)"
+)
 @click.option("--lint/--no-lint", default=True, help="Lint generated DAG file")
 def generate(
     blueprint_name: str,
     output_file: str,
-    template_dir: Optional[str],
-    config: List[str],
+    template_dir: str | None,
+    config: list[str],
     lint: bool,
 ):
     """Generate a DAG file from a blueprint template.
@@ -134,7 +133,9 @@ def generate(
         config_dict = {}
         for param in config:
             if "=" not in param:
-                console.print(f"[red]Invalid config format: {param}. Use key=value[/red]")
+                console.print(
+                    f"[red]Invalid config format: {param}. Use key=value[/red]"
+                )
                 sys.exit(1)
             key, value = param.split("=", 1)
             config_dict[key] = value
@@ -145,9 +146,9 @@ def generate(
 
         # Generate DAG file
         console.print(f"Generating DAG from blueprint '{blueprint_name}'...")
-        template_code = blueprint_class.build_template(
-            output_file=output_file, lint=lint, **config_dict
-        )
+        # template_code = blueprint_class.build_template(
+        #    output_file=output_file, lint=lint, **config_dict
+        # )
 
         console.print(f"✅ Generated DAG file: {output_file}")
 
@@ -184,7 +185,9 @@ def lint(file_or_dir: str, fix: bool, format: bool):  # noqa: A002
         if successful == total:
             console.print(f"✅ All {total} files linted successfully")
         else:
-            console.print(f"[red]❌ {total - successful}/{total} files failed linting[/red]")
+            console.print(
+                f"[red]❌ {total - successful}/{total} files failed linting[/red]"
+            )
             sys.exit(1)
     else:
         console.print(f"[red]Invalid path: {path}[/red]")

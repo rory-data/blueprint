@@ -1,22 +1,13 @@
-"""
-Daily ETL DAG: {{ config.job_id }}
-Generated from Blueprint template
+from datetime import UTC, datetime, timedelta, timezone
 
-Source: {{ config.source_table }}
-Target: {{ config.target_table }}
-Schedule: {{ config.schedule }}
-Retries: {{ config.retries }}
-"""
-
-from datetime import datetime, timedelta, timezone
-from airflow import DAG
-from airflow.operators.bash import BashOperator
-from airflow.operators.python import PythonOperator
+from airflow.providers.standard.operators import BashOperator
+from airflow.providers.standard.operators.python import PythonOperator
+from airflow.sdk import DAG
 
 # DAG configuration
 default_args = {
-    "owner": "data-team",
-    "retries": {{ config.retries }},
+    "owner": "{{ config.owner }}",
+    "retries": {{config.retries}},
     "retry_delay": timedelta(minutes=5),
     "email_on_failure": False,
 }
@@ -26,10 +17,11 @@ dag = DAG(
     default_args=default_args,
     description="ETL from {{ config.source_table }} to {{ config.target_table }}",
     schedule="{{ config.schedule }}",
-    start_date=datetime(2024, 1, 1, tzinfo=timezone.utc),
+    start_date=datetime(2024, 1, 1, tzinfo=UTC),
     catchup=False,
-    tags=["etl", "blueprint"],
+    tags={"etl", "blueprint"},
 )
+
 
 # Task definitions
 def extract_transform(**context):
@@ -38,14 +30,15 @@ def extract_transform(**context):
     print("Preparing to load into {{ config.target_table }}")
     return {"records_processed": 1000}
 
+
 with dag:
-    check_source = BashOperator(
+    check_source_data = BashOperator(
         task_id="check_source_data",
         bash_command='echo "Checking if {{ config.source_table }} has data..."',
     )
 
-    etl_task = PythonOperator(
-        task_id="extract_transform",
+    etl_transform = PythonOperator(
+        task_id="etl_transform",
         python_callable=extract_transform,
     )
 
@@ -54,9 +47,10 @@ with dag:
         bash_command='echo "Loading data into {{ config.target_table }}..."',
     )
 
-    quality_check = BashOperator(
+    data_quality_check = BashOperator(
         task_id="data_quality_check",
         bash_command='echo "Running quality checks on {{ config.target_table }}..."',
     )
 
-    check_source >> etl_task >> load_data >> quality_check
+    # Define task dependencies
+    check_source_data >> etl_transform >> load_data >> data_quality_check

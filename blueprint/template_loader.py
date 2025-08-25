@@ -18,9 +18,6 @@ DEFAULT_TEMPLATE_PATH = ".astro/templates"
 logger = logging.getLogger(__name__)
 
 
-
-
-
 def get_template_path() -> str:
     """Get the template path from environment or default."""
     return utils_get_template_path()
@@ -63,9 +60,6 @@ def load_template(module_name: str, class_name: str) -> Any:
     except AttributeError as e:
         error_msg = f"Class {class_name} not found in {module_name}: {e}"
         raise AttributeError(error_msg) from e
-
-
-
 
 
 # Auto-setup when module is imported

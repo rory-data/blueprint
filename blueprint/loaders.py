@@ -114,7 +114,7 @@ def from_yaml(
 
         if validate_only:
             # Just validate the config using Pydantic - no DAG rendering
-            config_type = blueprint_class.get_config_type()
+            config_type = blueprint_class.Config
             return config_type(**config)  # This runs all Pydantic validation
         # Full build including DAG rendering
         return blueprint_class.build(**config)
