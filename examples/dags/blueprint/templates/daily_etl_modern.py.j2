@@ -1,0 +1,101 @@
+"""
+Modern Daily ETL DAG: {{ config.job_id }}
+Generated from core-repo Blueprint template using modern data engineering patterns
+
+Source: {{ config.source_table }}
+Target: {{ config.target_table }}
+Schedule: {{ config.schedule }}
+Retries: {{ config.retries }}
+"""
+
+from datetime import UTC, datetime, timedelta
+
+from airflow.sdk import DAG
+from airflow.providers.standard.operators.python import PythonOperator
+
+# Import core-repo components
+from custom.operators.duckdb_operator import DuckDBOperator
+from utils.logging_utils import setup_logging, LoggingConfig
+
+# Setup logging for this DAG
+setup_logging(LoggingConfig(level="INFO"))
+
+# DAG configuration
+default_args = {
+    "owner": "{{ config.owner }}",
+    "retries": {{ config.retries }},
+    "retry_delay": timedelta(minutes=5),
+    "email_on_failure": False,
+}
+
+dag = DAG(
+    dag_id="{{ config.job_id }}",
+    default_args=default_args,
+    description="Modern ETL from {{ config.source_table }} to {{ config.target_table }}",
+    schedule="{{ config.schedule }}",
+    start_date=datetime(2024, 1, 1, tzinfo=UTC),
+    catchup=False,
+    tags=["etl", "blueprint", "core-repo", "modern"],
+)
+
+
+def validate_source_data(**context):
+    """Validate source data availability and quality."""
+    from utils.logging_utils import log_function_call
+    
+    log_function_call("validate_source_data", {"source": "{{ config.source_table }}"})
+    
+    # Example validation logic using DuckDB adapter
+    print("✅ Validating source data in {{ config.source_table }}")
+    print("✅ Data quality checks passed")
+    return {"status": "validated", "source": "{{ config.source_table }}"}
+
+
+with dag:
+    # Task 1: Validate source data
+    validate_source = PythonOperator(
+        task_id="validate_source_data",
+        python_callable=validate_source_data,
+    )
+    
+    # Task 2: Extract and transform data using DuckDB
+    extract_transform = DuckDBOperator(
+        task_id="extract_transform",
+        sql="""
+        CREATE OR REPLACE TABLE staging_{{ config.target_table.split('.')[-1] }} AS
+        SELECT 
+            *,
+            CURRENT_TIMESTAMP as processed_at,
+            '{{ ds }}' as partition_date
+        FROM {{ config.source_table }}
+        WHERE DATE(created_at) = '{{ ds }}'
+        """,
+        duckdb_conn_id="duckdb_default",
+    )
+    
+    # Task 3: Load data to target using modern patterns
+    load_to_target = DuckDBOperator(
+        task_id="load_to_target",
+        sql="""
+        INSERT INTO {{ config.target_table }}
+        SELECT * FROM staging_{{ config.target_table.split('.')[-1] }}
+        """,
+        duckdb_conn_id="duckdb_default",
+    )
+    
+    # Task 4: Data quality validation
+    quality_check = DuckDBOperator(
+        task_id="data_quality_check",
+        sql="""
+        SELECT 
+            COUNT(*) as total_records,
+            COUNT(DISTINCT id) as unique_records,
+            COUNT(*) - COUNT(id) as null_ids
+        FROM {{ config.target_table }}
+        WHERE partition_date = '{{ ds }}'
+        """,
+        duckdb_conn_id="duckdb_default",
+    )
+
+    # Define task dependencies using modern Airflow patterns
+    validate_source >> extract_transform >> load_to_target >> quality_check
