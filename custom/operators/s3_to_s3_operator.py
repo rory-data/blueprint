@@ -1,7 +1,7 @@
-"""S3 to S3 Operator for Airflow 2.10+.
+"""S3 to S3 Operator for Airflow 2.10+ using Amazon Provider.
 
 This module provides an Airflow operator for S3 to S3 operations
-like copying, transforming, and moving objects between S3 locations.
+using the official Amazon provider.
 """
 
 import logging
@@ -10,16 +10,14 @@ from typing import Any
 from airflow.models import BaseOperator
 from airflow.utils.context import Context
 
-from ..hooks.s3_hook import S3Hook
-
 logger = logging.getLogger(__name__)
 
 
 class S3ToS3Operator(BaseOperator):
-    """Operator for S3 to S3 operations.
+    """Operator for S3 to S3 operations using Amazon Provider.
     
-    Performs operations like copying, moving, or transforming data
-    between S3 locations following modern Airflow patterns.
+    Performs operations like copying, moving between S3 locations
+    using the official Airflow Amazon provider.
     """
     
     def __init__(
@@ -58,7 +56,7 @@ class S3ToS3Operator(BaseOperator):
             raise ValueError("operation must be 'copy' or 'move'")
     
     def execute(self, context: Context) -> str:
-        """Execute the S3 to S3 operation.
+        """Execute the S3 to S3 operation using Amazon Provider.
         
         Args:
             context: Airflow execution context
@@ -66,10 +64,18 @@ class S3ToS3Operator(BaseOperator):
         Returns:
             Status message
         """
+        try:
+            from airflow.providers.amazon.aws.hooks.s3 import S3Hook
+        except ImportError as e:
+            raise ImportError(
+                "Airflow Amazon provider is required. "
+                "Install with: pip install apache-airflow-providers-amazon"
+            ) from e
+        
         hook = S3Hook(aws_conn_id=self.aws_conn_id)
         
         # Verify source object exists
-        if not hook.object_exists(self.source_bucket, self.source_key):
+        if not hook.check_for_key(key=self.source_key, bucket_name=self.source_bucket):
             raise FileNotFoundError(
                 f"Source object does not exist: s3://{self.source_bucket}/{self.source_key}"
             )
@@ -82,8 +88,8 @@ class S3ToS3Operator(BaseOperator):
                 self.dest_bucket, self.dest_key
             )
             hook.copy_object(
-                self.source_bucket, self.source_key,
-                self.dest_bucket, self.dest_key
+                source_bucket_key=f"{self.source_bucket}/{self.source_key}",
+                dest_bucket_key=f"{self.dest_bucket}/{self.dest_key}"
             )
             
         elif self.operation == "move":
@@ -94,14 +100,14 @@ class S3ToS3Operator(BaseOperator):
             )
             # Copy then delete for move operation
             hook.copy_object(
-                self.source_bucket, self.source_key,
-                self.dest_bucket, self.dest_key
+                source_bucket_key=f"{self.source_bucket}/{self.source_key}",
+                dest_bucket_key=f"{self.dest_bucket}/{self.dest_key}"
             )
-            hook.delete_object(self.source_bucket, self.source_key)
+            hook.delete_objects(bucket=self.source_bucket, keys=[self.source_key])
         
         # Verify destination if requested
         if self.verify_dest:
-            if not hook.object_exists(self.dest_bucket, self.dest_key):
+            if not hook.check_for_key(key=self.dest_key, bucket_name=self.dest_bucket):
                 raise RuntimeError(
                     f"Destination verification failed: s3://{self.dest_bucket}/{self.dest_key}"
                 )

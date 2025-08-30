@@ -1,7 +1,7 @@
-"""DuckDB Hook for Airflow 2.10+.
+"""DuckDB Hook for Airflow 2.10+ with Ibis integration.
 
 This module provides an Airflow hook for DuckDB connections
-following Airflow 2.10+ best practices.
+using Ibis as the data spine for efficient operations.
 """
 
 import logging
@@ -15,9 +15,10 @@ logger = logging.getLogger(__name__)
 
 
 class DuckDBHook(BaseHook):
-    """Hook for DuckDB connections in Airflow.
+    """Hook for DuckDB connections in Airflow with Ibis integration.
     
-    Integrates DuckDBAdapter with Airflow's connection management system.
+    Integrates DuckDBAdapter with Airflow's connection management system
+    and provides Ibis-based data operations.
     """
     
     conn_name_attr = "duckdb_conn_id"
@@ -40,7 +41,7 @@ class DuckDBHook(BaseHook):
         """Get DuckDB adapter instance.
         
         Returns:
-            Configured DuckDBAdapter instance
+            Configured DuckDBAdapter instance with Ibis integration
         """
         if self._adapter is None:
             conn = self.get_connection(self.duckdb_conn_id)
@@ -63,38 +64,48 @@ class DuckDBHook(BaseHook):
             Tuple of (success, message)
         """
         try:
-            with self.adapter.connection() as conn:
-                conn.execute("SELECT 1").fetchone()
+            # Use Ibis connection to test
+            conn = self.adapter.connection
+            conn.sql("SELECT 1").to_pyarrow()
             return True, "DuckDB connection test successful"
         except Exception as e:
             return False, f"DuckDB connection test failed: {e}"
     
-    def execute_query(self, query: str, parameters: dict[str, Any] | None = None) -> Any:
-        """Execute a query using the adapter.
+    def execute_query_ibis(self, query: str) -> Any:
+        """Execute a query and return Ibis expression.
         
         Args:
             query: SQL query to execute
-            parameters: Optional query parameters
             
         Returns:
-            Query results
+            Ibis table expression
         """
-        return self.adapter.execute_query(query, parameters)
+        return self.adapter.execute_query(query)
     
-    def execute_query_df(self, query: str, parameters: dict[str, Any] | None = None) -> Any:
-        """Execute a query and return results as DataFrame.
+    def execute_query_arrow(self, query: str) -> Any:
+        """Execute a query and return results as Arrow table.
         
         Args:
             query: SQL query to execute
-            parameters: Optional query parameters
             
         Returns:
-            Query results as pandas DataFrame
+            Query results as pyarrow Table
         """
-        return self.adapter.execute_query_df(query, parameters)
+        return self.adapter.execute_query_arrow(query)
+    
+    def execute_query_polars(self, query: str) -> Any:
+        """Execute a query and return results as Polars DataFrame.
+        
+        Args:
+            query: SQL query to execute
+            
+        Returns:
+            Query results as Polars DataFrame
+        """
+        return self.adapter.execute_query_polars(query)
     
     def load_data_from_file(self, file_path: str, table_name: str) -> None:
-        """Load data from file into DuckDB table.
+        """Load data from file into DuckDB table using Ibis.
         
         Args:
             file_path: Path to data file
@@ -103,11 +114,11 @@ class DuckDBHook(BaseHook):
         self.adapter.load_data_from_file(file_path, table_name)
     
     def export_to_file(self, query: str, output_path: str, format: str = "parquet") -> None:
-        """Export query results to file.
+        """Export query results to file using Ibis.
         
         Args:
             query: SQL query to execute
             output_path: Path to output file
-            format: Output format (parquet, csv, json)
+            format: Output format (parquet, csv)
         """
         self.adapter.export_to_file(query, output_path, format)

@@ -1,7 +1,7 @@
-"""File operations utility library with pyarrow integration.
+"""File operations utility library with pyarrow and Ibis integration.
 
 This module provides utilities for reading and writing Parquet files
-on S3 using pyarrow, following modern data engineering patterns.
+on S3 using pyarrow and Ibis, following modern data engineering patterns.
 """
 
 import logging
@@ -15,23 +15,11 @@ logger = logging.getLogger(__name__)
 
 
 class FileConfig(BaseModel):
-    """Configuration for file operations."""
+    """Configuration for file operations using Airflow connections."""
     
-    aws_access_key_id: str | None = Field(
-        default=None,
-        description="AWS access key ID (uses default credentials if not provided)"
-    )
-    aws_secret_access_key: str | None = Field(
-        default=None,
-        description="AWS secret access key (uses default credentials if not provided)"
-    )
-    region_name: str = Field(
-        default="us-east-1",
-        description="AWS region name"
-    )
-    endpoint_url: str | None = Field(
-        default=None,
-        description="Custom S3 endpoint URL"
+    aws_conn_id: str = Field(
+        default="aws_default",
+        description="Airflow connection ID for AWS/S3"
     )
 
 
@@ -39,7 +27,7 @@ class FileOperations:
     """Utility class for file operations with S3 and pyarrow integration.
     
     Provides convenient methods for reading and writing Parquet files
-    on S3 using pyarrow, with proper error handling and resource management.
+    on S3 using pyarrow and Ibis, with proper error handling and resource management.
     """
     
     def __init__(self, config: FileConfig | None = None) -> None:
@@ -49,39 +37,27 @@ class FileOperations:
             config: File operations configuration
         """
         self.config = config or FileConfig()
+        self._s3_hook = None
     
-    def _get_s3_filesystem(self) -> Any:
-        """Get pyarrow S3 filesystem.
+    @property
+    def s3_hook(self) -> Any:
+        """Get Airflow S3 hook instance.
         
         Returns:
-            pyarrow S3FileSystem instance
-            
-        Raises:
-            ImportError: If pyarrow is not installed
+            Airflow S3Hook from Amazon provider
         """
-        try:
-            import pyarrow.fs as fs
-        except ImportError as e:
-            raise ImportError(
-                "pyarrow package is required for S3 operations. "
-                "Install with: pip install pyarrow"
-            ) from e
+        if self._s3_hook is None:
+            try:
+                from airflow.providers.amazon.aws.hooks.s3 import S3Hook
+            except ImportError as e:
+                raise ImportError(
+                    "Airflow Amazon provider is required. "
+                    "Install with: pip install apache-airflow-providers-amazon"
+                ) from e
+            
+            self._s3_hook = S3Hook(aws_conn_id=self.config.aws_conn_id)
         
-        # Build S3 filesystem options
-        fs_options = {
-            "region": self.config.region_name,
-        }
-        
-        if self.config.aws_access_key_id and self.config.aws_secret_access_key:
-            fs_options.update({
-                "access_key": self.config.aws_access_key_id,
-                "secret_key": self.config.aws_secret_access_key,
-            })
-        
-        if self.config.endpoint_url:
-            fs_options["endpoint_override"] = self.config.endpoint_url
-        
-        return fs.S3FileSystem(**fs_options)
+        return self._s3_hook
     
     def read_parquet_from_s3(self, bucket: str, key: str, **kwargs) -> Any:
         """Read a Parquet file from S3 using pyarrow.
@@ -101,14 +77,25 @@ class FileOperations:
                 "pyarrow package is required. Install with: pip install pyarrow"
             ) from e
         
-        s3_path = f"{bucket}/{key}"
-        filesystem = self._get_s3_filesystem()
-        
-        logger.info("Reading Parquet file from s3://%s", s3_path)
-        table = pq.read_table(s3_path, filesystem=filesystem, **kwargs)
-        logger.info("Read Parquet file with %d rows and %d columns", table.num_rows, table.num_columns)
-        
-        return table
+        # Use Airflow S3 hook to get the file
+        with tempfile.NamedTemporaryFile() as temp_file:
+            temp_path = Path(temp_file.name)
+            
+            # Download file using Airflow S3 hook
+            self.s3_hook.download_file(
+                key=key,
+                bucket_name=bucket,
+                local_path=str(temp_path)
+            )
+            
+            # Read with pyarrow
+            table = pq.read_table(temp_path, **kwargs)
+            logger.info(
+                "Read Parquet file from s3://%s/%s with %d rows and %d columns",
+                bucket, key, table.num_rows, table.num_columns
+            )
+            
+            return table
     
     def write_parquet_to_s3(self, table: Any, bucket: str, key: str, **kwargs) -> None:
         """Write a pyarrow Table to S3 as Parquet.
@@ -126,80 +113,78 @@ class FileOperations:
                 "pyarrow package is required. Install with: pip install pyarrow"
             ) from e
         
-        s3_path = f"{bucket}/{key}"
-        filesystem = self._get_s3_filesystem()
-        
-        logger.info("Writing Parquet file to s3://%s", s3_path)
-        pq.write_table(table, s3_path, filesystem=filesystem, **kwargs)
-        logger.info("Successfully wrote Parquet file with %d rows", table.num_rows)
+        with tempfile.NamedTemporaryFile(suffix=".parquet") as temp_file:
+            temp_path = Path(temp_file.name)
+            
+            # Write to temporary file
+            pq.write_table(table, temp_path, **kwargs)
+            
+            # Upload using Airflow S3 hook
+            self.s3_hook.load_file(
+                filename=str(temp_path),
+                key=key,
+                bucket_name=bucket,
+                replace=True
+            )
+            
+            logger.info("Successfully wrote Parquet file to s3://%s/%s with %d rows", bucket, key, table.num_rows)
     
-    def read_parquet_to_pandas(self, bucket: str, key: str, **kwargs) -> Any:
-        """Read a Parquet file from S3 directly to pandas DataFrame.
+    def read_parquet_to_ibis(self, bucket: str, key: str, backend: str = "polars") -> Any:
+        """Read a Parquet file from S3 directly to Ibis expression.
         
         Args:
             bucket: S3 bucket name
             key: S3 object key
-            **kwargs: Additional arguments for pandas.read_parquet
+            backend: Ibis backend to use ('polars' or 'duckdb')
             
         Returns:
-            pandas DataFrame
+            Ibis table expression
         """
         try:
-            import pandas as pd
+            import ibis
         except ImportError as e:
             raise ImportError(
-                "pandas package is required. Install with: pip install pandas"
+                "Ibis package is required. Install with: pip install 'ibis-framework[polars,duckdb]'"
             ) from e
         
-        s3_url = f"s3://{bucket}/{key}"
+        # Read as Arrow table first
+        arrow_table = self.read_parquet_from_s3(bucket, key)
         
-        # Set up storage options if credentials are provided
-        storage_options = {}
-        if self.config.aws_access_key_id and self.config.aws_secret_access_key:
-            storage_options.update({
-                "key": self.config.aws_access_key_id,
-                "secret": self.config.aws_secret_access_key,
-            })
-        if self.config.endpoint_url:
-            storage_options["client_kwargs"] = {"endpoint_url": self.config.endpoint_url}
+        # Convert to Ibis using specified backend
+        if backend == "polars":
+            try:
+                import polars as pl
+            except ImportError as e:
+                raise ImportError(
+                    "Polars package is required. Install with: pip install polars"
+                ) from e
+            
+            polars_df = pl.from_arrow(arrow_table)
+            ibis_table = ibis.memtable(polars_df)
+        elif backend == "duckdb":
+            conn = ibis.duckdb.connect()
+            ibis_table = conn.create_table("temp_table", arrow_table, overwrite=True)
+        else:
+            raise ValueError(f"Unsupported backend: {backend}. Use 'polars' or 'duckdb'")
         
-        logger.info("Reading Parquet file from %s to pandas DataFrame", s3_url)
-        df = pd.read_parquet(s3_url, storage_options=storage_options, **kwargs)
-        logger.info("Read DataFrame with %d rows and %d columns", len(df), len(df.columns))
-        
-        return df
+        logger.info("Read Parquet file to Ibis table with %s backend", backend)
+        return ibis_table
     
-    def write_pandas_to_s3_parquet(self, df: Any, bucket: str, key: str, **kwargs) -> None:
-        """Write a pandas DataFrame to S3 as Parquet.
+    def write_ibis_to_s3_parquet(self, ibis_table: Any, bucket: str, key: str, **kwargs) -> None:
+        """Write an Ibis table to S3 as Parquet.
         
         Args:
-            df: pandas DataFrame to write
+            ibis_table: Ibis table expression to write
             bucket: S3 bucket name
             key: S3 object key
-            **kwargs: Additional arguments for pandas.to_parquet
+            **kwargs: Additional arguments for pyarrow.parquet.write_table
         """
-        try:
-            import pandas as pd
-        except ImportError as e:
-            raise ImportError(
-                "pandas package is required. Install with: pip install pandas"
-            ) from e
+        # Convert Ibis table to Arrow
+        arrow_table = ibis_table.to_pyarrow()
         
-        s3_url = f"s3://{bucket}/{key}"
-        
-        # Set up storage options if credentials are provided
-        storage_options = {}
-        if self.config.aws_access_key_id and self.config.aws_secret_access_key:
-            storage_options.update({
-                "key": self.config.aws_access_key_id,
-                "secret": self.config.aws_secret_access_key,
-            })
-        if self.config.endpoint_url:
-            storage_options["client_kwargs"] = {"endpoint_url": self.config.endpoint_url}
-        
-        logger.info("Writing DataFrame to %s (%d rows, %d columns)", s3_url, len(df), len(df.columns))
-        df.to_parquet(s3_url, storage_options=storage_options, index=False, **kwargs)
-        logger.info("Successfully wrote DataFrame to S3 as Parquet")
+        # Write using existing method
+        self.write_parquet_to_s3(arrow_table, bucket, key, **kwargs)
+        logger.info("Successfully wrote Ibis table to S3 as Parquet")
     
     def copy_parquet_with_transformation(
         self,
@@ -207,36 +192,27 @@ class FileOperations:
         source_key: str,
         dest_bucket: str,
         dest_key: str,
-        transform_func: Any = None
+        transform_func: Any = None,
+        backend: str = "polars"
     ) -> None:
-        """Copy a Parquet file with optional transformation.
+        """Copy a Parquet file with optional transformation using Ibis.
         
         Args:
             source_bucket: Source S3 bucket
             source_key: Source S3 key
             dest_bucket: Destination S3 bucket
             dest_key: Destination S3 key
-            transform_func: Optional function to transform the data
+            transform_func: Optional function to transform Ibis table
+            backend: Ibis backend to use for transformations
         """
-        # Read source file
-        table = self.read_parquet_from_s3(source_bucket, source_key)
+        # Read source file as Ibis table
+        ibis_table = self.read_parquet_to_ibis(source_bucket, source_key, backend)
         
         # Apply transformation if provided
         if transform_func:
-            logger.info("Applying transformation function")
-            # Convert to pandas for transformation, then back to pyarrow
-            df = table.to_pandas()
-            df = transform_func(df)
-            
-            try:
-                import pyarrow as pa
-            except ImportError as e:
-                raise ImportError(
-                    "pyarrow package is required. Install with: pip install pyarrow"
-                ) from e
-            
-            table = pa.Table.from_pandas(df)
-            logger.info("Transformation applied, result has %d rows", table.num_rows)
+            logger.info("Applying transformation function using %s backend", backend)
+            ibis_table = transform_func(ibis_table)
+            logger.info("Transformation applied successfully")
         
         # Write to destination
-        self.write_parquet_to_s3(table, dest_bucket, dest_key)
+        self.write_ibis_to_s3_parquet(ibis_table, dest_bucket, dest_key)

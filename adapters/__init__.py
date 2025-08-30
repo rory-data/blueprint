@@ -1,15 +1,18 @@
-"""Adapters for connections to external systems.
+"""Adapters for connections to external systems using Airflow providers.
 
 This module provides adapters for connecting to and interacting with external systems
-like DuckDB, S3, Oracle, and other data sources in a standardized way.
+using official Airflow providers and modern data engineering patterns with Arrow/Ibis.
 """
 
-from .duckdb_adapter import DuckDBAdapter
-from .oracle_adapter import OracleAdapter
-from .s3_adapter import S3Adapter
+from .duckdb_adapter import DuckDBAdapter, DuckDBConfig
+from .oracle_adapter import OracleAdapter, OracleConfig
+from .s3_adapter import S3Adapter, S3Config
 
 __all__ = [
     "DuckDBAdapter",
-    "OracleAdapter", 
+    "DuckDBConfig",
+    "OracleAdapter",
+    "OracleConfig",
     "S3Adapter",
+    "S3Config",
 ]

@@ -1,7 +1,7 @@
-"""S3 Hook for Airflow 2.10+.
+"""S3 Hook for Airflow 2.10+ using Amazon Provider.
 
 This module provides an Airflow hook for S3 operations
-following Airflow 2.10+ best practices.
+using the official Amazon provider with dependency injection.
 """
 
 import logging
@@ -9,15 +9,14 @@ from typing import Any
 
 from airflow.hooks.base import BaseHook
 
-from ...adapters.s3_adapter import S3Adapter, S3Config
-
 logger = logging.getLogger(__name__)
 
 
 class S3Hook(BaseHook):
-    """Hook for S3 operations in Airflow.
+    """Hook for S3 operations in Airflow using Amazon Provider.
     
-    Integrates S3Adapter with Airflow's connection management system.
+    Extends Airflow's S3Hook with additional convenience methods
+    and dependency injection patterns.
     """
     
     conn_name_attr = "aws_conn_id"
@@ -33,29 +32,31 @@ class S3Hook(BaseHook):
         """
         super().__init__()
         self.aws_conn_id = aws_conn_id
-        self._adapter = None
+        self._s3_hook = None
     
     @property
-    def adapter(self) -> S3Adapter:
-        """Get S3 adapter instance.
+    def s3_hook(self) -> Any:
+        """Get Airflow S3 hook instance.
         
         Returns:
-            Configured S3Adapter instance
+            Airflow S3Hook from Amazon provider
+            
+        Raises:
+            ImportError: If Amazon provider is not installed
         """
-        if self._adapter is None:
-            conn = self.get_connection(self.aws_conn_id)
+        if self._s3_hook is None:
+            try:
+                from airflow.providers.amazon.aws.hooks.s3 import S3Hook as AmazonS3Hook
+            except ImportError as e:
+                raise ImportError(
+                    "Airflow Amazon provider is required. "
+                    "Install with: pip install apache-airflow-providers-amazon"
+                ) from e
             
-            # Extract configuration from Airflow connection
-            config = S3Config(
-                aws_access_key_id=conn.login,
-                aws_secret_access_key=conn.password,
-                region_name=conn.extra_dejson.get("region_name", "us-east-1"),
-                endpoint_url=conn.extra_dejson.get("endpoint_url")
-            )
-            
-            self._adapter = S3Adapter(config)
+            self._s3_hook = AmazonS3Hook(aws_conn_id=self.aws_conn_id)
+            logger.info("Created S3 hook with connection: %s", self.aws_conn_id)
         
-        return self._adapter
+        return self._s3_hook
     
     def test_connection(self) -> tuple[bool, str]:
         """Test the S3 connection.
@@ -64,8 +65,8 @@ class S3Hook(BaseHook):
             Tuple of (success, message)
         """
         try:
-            with self.adapter.client() as s3_client:
-                s3_client.list_buckets()
+            # Use Amazon provider's connection test
+            self.s3_hook.get_conn().list_buckets()
             return True, "S3 connection test successful"
         except Exception as e:
             return False, f"S3 connection test failed: {e}"
@@ -81,7 +82,10 @@ class S3Hook(BaseHook):
         Returns:
             List of object keys
         """
-        return self.adapter.list_objects(bucket, prefix, suffix)
+        keys = self.s3_hook.list_keys(bucket_name=bucket, prefix=prefix)
+        if suffix:
+            keys = [key for key in keys if key.endswith(suffix)]
+        return keys
     
     def read_object(self, bucket: str, key: str) -> bytes:
         """Read an object from S3.
@@ -93,7 +97,10 @@ class S3Hook(BaseHook):
         Returns:
             Object content as bytes
         """
-        return self.adapter.read_object(bucket, key)
+        content = self.s3_hook.read_key(key=key, bucket_name=bucket)
+        if isinstance(content, str):
+            content = content.encode("utf-8")
+        return content
     
     def write_object(self, bucket: str, key: str, data: bytes | str) -> None:
         """Write data to an S3 object.
@@ -103,7 +110,15 @@ class S3Hook(BaseHook):
             key: Object key
             data: Data to write
         """
-        self.adapter.write_object(bucket, key, data)
+        if isinstance(data, bytes):
+            data = data.decode("utf-8")
+        
+        self.s3_hook.load_string(
+            string_data=data,
+            key=key,
+            bucket_name=bucket,
+            replace=True
+        )
     
     def delete_object(self, bucket: str, key: str) -> None:
         """Delete an object from S3.
@@ -112,7 +127,7 @@ class S3Hook(BaseHook):
             bucket: S3 bucket name
             key: Object key
         """
-        self.adapter.delete_object(bucket, key)
+        self.s3_hook.delete_objects(bucket=bucket, keys=[key])
     
     def object_exists(self, bucket: str, key: str) -> bool:
         """Check if an object exists in S3.
@@ -124,7 +139,7 @@ class S3Hook(BaseHook):
         Returns:
             True if object exists, False otherwise
         """
-        return self.adapter.object_exists(bucket, key)
+        return self.s3_hook.check_for_key(key=key, bucket_name=bucket)
     
     def copy_object(self, source_bucket: str, source_key: str,
                    dest_bucket: str, dest_key: str) -> None:
@@ -136,4 +151,7 @@ class S3Hook(BaseHook):
             dest_bucket: Destination bucket name
             dest_key: Destination object key
         """
-        self.adapter.copy_object(source_bucket, source_key, dest_bucket, dest_key)
+        self.s3_hook.copy_object(
+            source_bucket_key=f"{source_bucket}/{source_key}",
+            dest_bucket_key=f"{dest_bucket}/{dest_key}"
+        )

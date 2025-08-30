@@ -73,17 +73,10 @@ file_ops = FileOperations()
 df = file_ops.read_parquet_to_pandas("my-bucket", "data/file.parquet")
 ```
 
-## Migration from Runtime Generation
+## Build-time Generation
 
-The framework has been updated to remove runtime DAG generation in favor of build-time generation:
+The framework focuses on build-time DAG generation for better performance and maintainability:
 
-### Before (DEPRECATED):
-```python
-from blueprint import from_yaml
-dag = from_yaml("config.yaml")  # Creates DAG at runtime
-```
-
-### After (RECOMMENDED):
 ```python
 from blueprint import Blueprint
 DailyETLBlueprint.build_template(

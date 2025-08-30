@@ -1,15 +1,16 @@
-"""Utility modules for common data engineering activities.
+"""Utility modules for common data engineering activities with Arrow/Ibis.
 
 This module provides helper functions and classes for common activities
-like file operations, configuration management, and logging utilities.
+using modern data engineering patterns with Arrow and Ibis integration.
 """
 
 from .config_manager import ConfigManager
-from .file_utils import FileOperations
-from .logging_utils import setup_logging
+from .file_utils import FileOperations, FileConfig
+from .logging_utils import LoggingUtils
 
 __all__ = [
     "ConfigManager",
     "FileOperations",
-    "setup_logging",
+    "FileConfig",
+    "LoggingUtils",
 ]

@@ -1,7 +1,7 @@
-"""Oracle Hook for Airflow 2.10+.
+"""Oracle Hook for Airflow 2.10+ using Oracle Provider.
 
 This module provides an Airflow hook for Oracle database operations
-following Airflow 2.10+ best practices.
+using the official Oracle provider with Arrow and Polars integration.
 """
 
 import logging
@@ -9,15 +9,14 @@ from typing import Any
 
 from airflow.hooks.base import BaseHook
 
-from ...adapters.oracle_adapter import OracleAdapter, OracleConfig
-
 logger = logging.getLogger(__name__)
 
 
 class OracleHook(BaseHook):
-    """Hook for Oracle database operations in Airflow.
+    """Hook for Oracle database operations using Oracle Provider.
     
-    Integrates OracleAdapter with Airflow's connection management system.
+    Uses the official Airflow Oracle provider with additional
+    convenience methods for Arrow and Polars integration.
     """
     
     conn_name_attr = "oracle_conn_id"
@@ -33,34 +32,31 @@ class OracleHook(BaseHook):
         """
         super().__init__()
         self.oracle_conn_id = oracle_conn_id
-        self._adapter = None
+        self._oracle_hook = None
     
     @property
-    def adapter(self) -> OracleAdapter:
-        """Get Oracle adapter instance.
+    def oracle_hook(self) -> Any:
+        """Get Airflow Oracle hook instance.
         
         Returns:
-            Configured OracleAdapter instance
+            Airflow OracleHook from Oracle provider
+            
+        Raises:
+            ImportError: If Oracle provider is not installed
         """
-        if self._adapter is None:
-            conn = self.get_connection(self.oracle_conn_id)
+        if self._oracle_hook is None:
+            try:
+                from airflow.providers.oracle.hooks.oracle import OracleHook as AirflowOracleHook
+            except ImportError as e:
+                raise ImportError(
+                    "Airflow Oracle provider is required. "
+                    "Install with: pip install apache-airflow-providers-oracle"
+                ) from e
             
-            # Extract configuration from Airflow connection
-            config = OracleConfig(
-                host=conn.host,
-                port=conn.port or 1521,
-                username=conn.login,
-                password=conn.password,
-                service_name=conn.extra_dejson.get("service_name"),
-                sid=conn.extra_dejson.get("sid"),
-                encoding=conn.extra_dejson.get("encoding", "UTF-8"),
-                nencoding=conn.extra_dejson.get("nencoding", "UTF-8"),
-                threaded=conn.extra_dejson.get("threaded", True)
-            )
-            
-            self._adapter = OracleAdapter(config)
+            self._oracle_hook = AirflowOracleHook(oracle_conn_id=self.oracle_conn_id)
+            logger.info("Created Oracle hook with connection: %s", self.oracle_conn_id)
         
-        return self._adapter
+        return self._oracle_hook
     
     def test_connection(self) -> tuple[bool, str]:
         """Test the Oracle connection.
@@ -68,31 +64,78 @@ class OracleHook(BaseHook):
         Returns:
             Tuple of (success, message)
         """
-        return self.adapter.test_connection(), "Oracle connection test completed"
+        try:
+            self.oracle_hook.test_connection()
+            return True, "Oracle connection test successful"
+        except Exception as e:
+            return False, f"Oracle connection test failed: {e}"
     
-    def execute_query(self, query: str, parameters: dict[str, Any] | None = None) -> list[tuple]:
-        """Execute a query using the adapter.
+    def execute_query_arrow(self, query: str, parameters: dict[str, Any] | None = None) -> Any:
+        """Execute a query and return results as Arrow table.
         
         Args:
             query: SQL query to execute
             parameters: Optional query parameters
             
         Returns:
-            Query results as list of tuples
+            Query results as pyarrow Table
         """
-        return self.adapter.execute_query(query, parameters)
+        try:
+            import pyarrow as pa
+        except ImportError as e:
+            raise ImportError(
+                "PyArrow package is required. Install with: pip install pyarrow"
+            ) from e
+        
+        # Get data using Airflow's Oracle hook
+        records = self.oracle_hook.get_records(sql=query, parameters=parameters)
+        
+        if not records:
+            logger.info("Query returned no results")
+            return pa.table([])
+        
+        # Get column names from cursor description
+        cursor_desc = self.oracle_hook.get_cursor().description
+        columns = [desc[0] for desc in cursor_desc] if cursor_desc else []
+        
+        # Convert to Arrow table
+        if columns:
+            # Create dictionary for Arrow table
+            data_dict = {}
+            for i, col_name in enumerate(columns):
+                data_dict[col_name] = [row[i] for row in records]
+            arrow_table = pa.table(data_dict)
+        else:
+            # Fallback if no column info available
+            arrow_table = pa.table([list(row) for row in records])
+        
+        logger.info("Query executed, returned Arrow table with %d rows", arrow_table.num_rows)
+        return arrow_table
     
-    def execute_query_df(self, query: str, parameters: dict[str, Any] | None = None) -> Any:
-        """Execute a query and return results as DataFrame.
+    def execute_query_polars(self, query: str, parameters: dict[str, Any] | None = None) -> Any:
+        """Execute a query and return results as Polars DataFrame.
         
         Args:
             query: SQL query to execute
             parameters: Optional query parameters
             
         Returns:
-            Query results as pandas DataFrame
+            Query results as Polars DataFrame
         """
-        return self.adapter.execute_query_df(query, parameters)
+        try:
+            import polars as pl
+        except ImportError as e:
+            raise ImportError(
+                "Polars package is required. Install with: pip install polars"
+            ) from e
+        
+        # Get Arrow table first
+        arrow_table = self.execute_query_arrow(query, parameters)
+        
+        # Convert to Polars
+        polars_df = pl.from_arrow(arrow_table)
+        logger.info("Query executed, returned Polars DataFrame with %d rows", len(polars_df))
+        return polars_df
     
     def execute_dml(self, query: str, parameters: dict[str, Any] | None = None) -> int:
         """Execute a DML statement.
@@ -104,16 +147,11 @@ class OracleHook(BaseHook):
         Returns:
             Number of rows affected
         """
-        return self.adapter.execute_dml(query, parameters)
-    
-    def execute_many(self, query: str, parameters: list[dict[str, Any]]) -> int:
-        """Execute a statement with multiple parameter sets.
-        
-        Args:
-            query: SQL statement to execute
-            parameters: List of parameter dictionaries
-            
-        Returns:
-            Total number of rows affected
-        """
-        return self.adapter.execute_many(query, parameters)
+        try:
+            self.oracle_hook.run(sql=query, parameters=parameters, autocommit=True)
+            # Oracle hook doesn't return row count, so we return 1 for success
+            logger.info("DML executed successfully")
+            return 1
+        except Exception as e:
+            logger.error("DML execution failed: %s", e)
+            raise

@@ -1,7 +1,7 @@
-"""Oracle to S3 Operator for Airflow 2.10+.
+"""Oracle to S3 Operator for Airflow 2.10+ with Arrow integration.
 
 This module provides an Airflow operator for extracting data from Oracle
-and storing it in S3 as Parquet files.
+and storing it in S3 as Parquet files using Arrow for data spine.
 """
 
 import logging
@@ -13,16 +13,16 @@ from airflow.models import BaseOperator
 from airflow.utils.context import Context
 
 from ..hooks.oracle_hook import OracleHook
-from ..hooks.s3_hook import S3Hook
+from ...utils.file_utils import FileOperations, FileConfig
 
 logger = logging.getLogger(__name__)
 
 
 class OracleToS3Operator(BaseOperator):
-    """Operator for extracting data from Oracle to S3.
+    """Operator for extracting data from Oracle to S3 using Arrow.
     
     Executes Oracle queries and stores results as Parquet files in S3
-    following modern Airflow patterns.
+    following modern Airflow patterns with Arrow as data spine.
     """
     
     def __init__(
@@ -33,8 +33,7 @@ class OracleToS3Operator(BaseOperator):
         oracle_conn_id: str = "oracle_default",
         aws_conn_id: str = "aws_default",
         parameters: dict[str, Any] | None = None,
-        file_format: str = "parquet",
-        chunk_size: int = 10000,
+        preserve_schema: bool = True,
         **kwargs
     ) -> None:
         """Initialize Oracle to S3 operator.
@@ -46,8 +45,7 @@ class OracleToS3Operator(BaseOperator):
             oracle_conn_id: Airflow connection ID for Oracle
             aws_conn_id: Airflow connection ID for AWS/S3
             parameters: Query parameters
-            file_format: Output format (parquet, csv)
-            chunk_size: Number of rows to process in chunks
+            preserve_schema: Whether to preserve Oracle schema in Parquet
             **kwargs: Additional BaseOperator arguments
         """
         super().__init__(**kwargs)
@@ -57,14 +55,10 @@ class OracleToS3Operator(BaseOperator):
         self.oracle_conn_id = oracle_conn_id
         self.aws_conn_id = aws_conn_id
         self.parameters = parameters or {}
-        self.file_format = file_format.lower()
-        self.chunk_size = chunk_size
-        
-        if self.file_format not in ["parquet", "csv"]:
-            raise ValueError("file_format must be 'parquet' or 'csv'")
+        self.preserve_schema = preserve_schema
     
     def execute(self, context: Context) -> str:
-        """Execute the Oracle to S3 operation.
+        """Execute the Oracle to S3 operation using Arrow.
         
         Args:
             context: Airflow execution context
@@ -73,38 +67,24 @@ class OracleToS3Operator(BaseOperator):
             Status message with file location
         """
         oracle_hook = OracleHook(oracle_conn_id=self.oracle_conn_id)
-        s3_hook = S3Hook(aws_conn_id=self.aws_conn_id)
+        file_ops = FileOperations(FileConfig(aws_conn_id=self.aws_conn_id))
         
-        logger.info("Executing Oracle query and transferring to S3")
+        logger.info("Executing Oracle query and transferring to S3 using Arrow")
         
         try:
-            # Execute query and get DataFrame
-            df = oracle_hook.execute_query_df(self.sql, self.parameters)
-            logger.info("Oracle query executed, %d rows retrieved", len(df))
+            # Execute query and get Arrow table (preserves schema)
+            arrow_table = oracle_hook.execute_query_arrow(self.sql, self.parameters)
+            logger.info("Oracle query executed, %d rows retrieved as Arrow table", arrow_table.num_rows)
             
-            # Create temporary file for the data
-            with tempfile.NamedTemporaryFile(suffix=f".{self.file_format}", delete=False) as temp_file:
-                temp_path = Path(temp_file.name)
-                
-                # Write data to temporary file
-                if self.file_format == "parquet":
-                    df.to_parquet(temp_path, index=False)
-                elif self.file_format == "csv":
-                    df.to_csv(temp_path, index=False)
-                
-                logger.info("Data written to temporary file: %s", temp_path)
-                
-                # Upload to S3
-                with temp_path.open("rb") as f:
-                    data = f.read()
-                    s3_hook.write_object(self.s3_bucket, self.s3_key, data)
-                
-                # Clean up temporary file
-                temp_path.unlink()
-                
-            # Verify upload
-            if s3_hook.object_exists(self.s3_bucket, self.s3_key):
-                result_msg = f"Successfully transferred {len(df)} rows to s3://{self.s3_bucket}/{self.s3_key}"
+            # Write Arrow table directly to S3 as Parquet (preserves schema)
+            file_ops.write_parquet_to_s3(arrow_table, self.s3_bucket, self.s3_key)
+            
+            # Verify upload using S3 hook
+            s3_hook = file_ops.s3_hook
+            if s3_hook.check_for_key(key=self.s3_key, bucket_name=self.s3_bucket):
+                result_msg = f"Successfully transferred {arrow_table.num_rows} rows to s3://{self.s3_bucket}/{self.s3_key}"
+                if self.preserve_schema:
+                    result_msg += " (Oracle schema preserved in Parquet)"
                 logger.info(result_msg)
                 return result_msg
             else:
