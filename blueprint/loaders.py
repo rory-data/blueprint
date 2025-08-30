@@ -46,28 +46,41 @@ def from_yaml(
     path: str,
     overrides: dict[str, Any] | None = None,
     template_dir: str | None = None,
-    validate_only: bool = False,
+    validate_only: bool = True,
 ):
-    """Load a blueprint from YAML configuration.
+    """Load and validate a blueprint configuration from YAML.
+
+    DEPRECATED: Runtime DAG generation has been removed in favor of build-time generation.
+    This function now only validates configurations.
 
     Args:
         path: Path to YAML configuration file
         overrides: Optional parameter overrides
         template_dir: Directory containing blueprint templates (deprecated - use BLUEPRINT_TEMPLATE_PATH env var)
-        validate_only: If True, only validate config without rendering DAG
+        validate_only: Always True - runtime DAG generation has been removed
 
     Returns:
-        The rendered DAG (or validated config if validate_only=True)
+        The validated configuration (DAG rendering has been removed)
 
     Example:
         ```python
-        # Load and render a DAG
-        dag = from_yaml("configs/customer_etl.yaml", overrides={"retries": 5})
-
-        # Just validate the configuration
-        config = from_yaml("configs/test.yaml", validate_only=True)
+        # Validate a configuration
+        config = from_yaml("configs/customer_etl.yaml", overrides={"retries": 5})
+        
+        # For DAG generation, use build-time methods instead:
+        # blueprint.build_template(output_file="dags/my_dag.py", **config)
         ```
     """
+    import warnings
+    
+    if not validate_only:
+        warnings.warn(
+            "Runtime DAG generation has been deprecated. "
+            "Use build-time generation with blueprint.build_template() instead.",
+            DeprecationWarning,
+            stacklevel=2
+        )
+        validate_only = True
     config_path = Path(path)
 
     # Load YAML configuration with error handling
@@ -112,12 +125,9 @@ def from_yaml(
     try:
         blueprint_class = load_blueprint(blueprint_name, template_dir)
 
-        if validate_only:
-            # Just validate the config using Pydantic - no DAG rendering
-            config_type = blueprint_class.Config
-            return config_type(**config)  # This runs all Pydantic validation
-        # Full build including DAG rendering
-        return blueprint_class.build(**config)
+        # Always validate only - runtime DAG generation has been removed
+        config_type = blueprint_class.Config
+        return config_type(**config)  # This runs all Pydantic validation
 
     except Exception as e:
         # Enhance error with configuration context

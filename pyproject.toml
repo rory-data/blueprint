@@ -1,7 +1,7 @@
 [project]
-name = "airflow-blueprint"
+name = "core-repo"
 dynamic = ["version"]
-description = "Create reusable Airflow DAG templates with validated configurations"
+description = "Modern data engineering framework with reusable Airflow DAG templates, adapters for external systems, and build-time generation"
 readme = "README.md"
 license = {text = "MIT"}
 authors = [
@@ -10,7 +10,7 @@ authors = [
 maintainers = [
     { name = "Astronomer", email = "humans@astronomer.io" }
 ]
-keywords = ["airflow", "dags", "templates", "blueprints", "automation"]
+keywords = ["airflow", "dags", "templates", "blueprints", "automation", "data-engineering", "etl", "s3", "duckdb", "oracle", "pyarrow"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -44,9 +44,30 @@ dev = [
     "pyright>=1.1.0",
     "ty>=0.0.1a15",
 ]
+data-engineering = [
+    "boto3>=1.35.0",  # S3 operations
+    "pandas>=2.0.0",  # DataFrame operations
+    "pyarrow>=17.0.0",  # Parquet file operations
+    "duckdb>=1.0.0",  # DuckDB database
+    "oracledb>=2.0.0",  # Oracle database connectivity
+]
+s3 = [
+    "boto3>=1.35.0",
+    "pandas>=2.0.0",
+    "pyarrow>=17.0.0",
+]
+duckdb = [
+    "duckdb>=1.0.0",
+    "pandas>=2.0.0",
+]
+oracle = [
+    "oracledb>=2.0.0",
+    "pandas>=2.0.0",
+]
 
 [project.scripts]
-blueprint = "blueprint.cli:cli"
+core-repo = "blueprint.cli:cli"
+blueprint = "blueprint.cli:cli"  # Backward compatibility
 
 [build-system]
 requires = ["hatchling"]
